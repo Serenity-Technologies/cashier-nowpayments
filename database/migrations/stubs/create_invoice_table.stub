@@ -1,0 +1,46 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        $prefix = config('cashier-nowpayments.prefix', 'cashier_nowpayments_');
+
+        Schema::create($prefix . 'invoices', function (Blueprint $table) {
+            $table->ulid('id')->primary();
+            $table->ulid('customer_id')->nullable()->index();
+            $table->ulidMorphs('billable');
+            $table->string('nowpayments_invoice_id')->nullable()->unique()->index();
+            $table->string('status')->index();
+            $table->string('currency');
+            $table->decimal('amount', 20, 8);
+            $table->decimal('amount_paid', 20, 8)->default(0);
+            $table->string('order_id')->nullable()->index();
+            $table->text('order_description')->nullable();
+            $table->string('invoice_url')->nullable();
+            $table->string('success_url')->nullable();
+            $table->string('cancel_url')->nullable();
+            $table->json('metadata')->nullable();
+            $table->timestamp('paid_at')->nullable();
+            $table->timestamp('expires_at')->nullable();
+            $table->timestamps();
+
+            $table->foreign('customer_id')
+                ->references('id')
+                ->on($prefix . 'customers')
+                ->nullOnDelete();
+
+            $table->index(['billable_type', 'billable_id']);
+        });
+    }
+
+    public function down(): void
+    {
+        $prefix = config('cashier-nowpayments.prefix', 'cashier_nowpayments_');
+        Schema::dropIfExists($prefix . 'invoices');
+    }
+};
