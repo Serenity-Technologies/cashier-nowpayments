@@ -1,0 +1,55 @@
+{
+    "name": "serenity_technologies/cashier-nowpayments",
+    "description": "Laravel Cashier-style package for NOWPayments cryptocurrency billing",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Kwadwo Kyeremeh",
+            "email": "kyerematics@gmail.com"
+        }
+    ],
+    "require": {
+        "php": "^8.2",
+        "illuminate/database": "^10.0|^11.0|^12.0|^13.0",
+        "illuminate/http": "^10.0|^11.0|^12.0|^13.0",
+        "illuminate/notifications": "^10.0|^11.0|^12.0|^13.0",
+        "illuminate/queue": "^10.0|^11.0|^12.0|^13.0",
+        "illuminate/support": "^10.0|^11.0|^12.0|^13.0",
+        "moneyphp/money": "^4.0",
+        "nesbot/carbon": "^2.0|^3.0",
+        "ramsey/uuid": "^4.0",
+        "serenity_technologies/nowpayments": "^1.0",
+      "ext-intl": "*",
+      "ext-bcmath": "*"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^10.0|^11.0",
+        "orchestra/testbench": "^8.0|^9.0|^10.0",
+        "laravel/pint": "^1.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "SerenityTechnologies\\CashierNowPayments\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "SerenityTechnologies\\CashierNowPayments\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "SerenityTechnologies\\CashierNowPayments\\CashierNowPaymentsServiceProvider"
+            ],
+            "aliases": {
+                "CashierNowPayments": "SerenityTechnologies\\CashierNowPayments\\Facades\\CashierNowPayments"
+            }
+        }
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}

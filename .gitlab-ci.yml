@@ -1,0 +1,228 @@
+# GitLab CI/CD Pipeline for Paysafe Payment Scheduler Laravel Package
+
+variables:
+  MYSQL_DATABASE: test_database
+  MYSQL_ROOT_PASSWORD: root_password
+  SECRET_DETECTION_ENABLED: 'true'
+  COMPOSER_CACHE_DIR: ${CI_PROJECT_DIR}/cache/composer
+
+stages:
+  - test1
+  - secret-detection
+  - publish
+
+sast:
+  stage: test1
+include:
+  - template: Security/SAST.gitlab-ci.yml
+  - template: Security/Secret-Detection.gitlab-ci.yml
+secret_detection:
+  stage: secret-detection
+# Cache composer dependencies between jobs
+#cache:
+#  key: ${CI_COMMIT_REF_SLUG}
+#  paths:
+#    - cache/composer/
+#    - vendor/
+#
+## Test stage - Run PHPUnit tests
+#test:
+#  stage: test
+#  image: php:8.2-cli
+#  services:
+#    - mysql:8.0
+#  variables:
+#    DB_CONNECTION: mysql
+#    DB_HOST: mysql
+#    DB_PORT: "3306"
+#    DB_DATABASE: $MYSQL_DATABASE
+#    DB_USERNAME: root
+#    DB_PASSWORD: $MYSQL_ROOT_PASSWORD
+#  before_script:
+#    - apt-get update && apt-get install -y git libzip-dev unzip libpng-dev libjpeg-dev libfreetype6-dev
+#    - docker-php-ext-install zip pdo pdo_mysql gd
+#    - curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+#    - composer install --prefer-dist --no-interaction --no-progress
+#  script:
+#    - mkdir -p storage/logs
+#    - cp .env.example .env
+#    - composer dump-autoload
+#    - php artisan key:generate
+#    - php artisan migrate
+#    - ./vendor/bin/phpunit --coverage-text --colors=never --log-junit storage/logs/junit.xml || true
+#    - ls -la storage/logs
+#  artifacts:
+#    reports:
+#      junit:
+#        - ./storage/logs/junit.xml
+#    paths:
+#      - ./storage/logs/
+#    expire_in: 1 week
+#  coverage: '/^\s*Lines:\s*\d+.\d+\%/'
+#
+## Quality stage - Static analysis and code style
+#quality:
+#  stage: quality
+#  image: php:8.4-cli
+#  before_script:
+#    - apt-get update && apt-get install -y git
+#    - curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+#    - composer install --prefer-dist --no-interaction --no-progress
+#    - composer require phpstan/phpstan --dev --no-update
+#    - composer require squizlabs/php_codesniffer --dev --no-update
+#    - composer update phpstan/phpstan squizlabs/php_codesniffer
+#  script:
+#    # PHPStan static analysis
+#    - ./vendor/bin/phpstan analyse src --level=7 --no-progress
+#
+#    # PHP_CodeSniffer for PSR-12 compliance
+#    - ./vendor/bin/phpcs --standard=PSR12 src/ tests/
+#
+#    # Check for security vulnerabilities
+#    - composer audit
+#
+## Test with different Laravel versions
+#.test_laravel_template: &laravel_test_definition
+#  stage: test
+#  image: php:8.4-cli
+#  services:
+#    - mysql:8.0
+#  variables:
+#    DB_CONNECTION: mysql
+#    DB_HOST: mysql
+#    DB_PORT: "3306"
+#    DB_DATABASE: $MYSQL_DATABASE
+#    DB_USERNAME: root
+#    DB_PASSWORD: $MYSQL_ROOT_PASSWORD
+#  before_script:
+#    - apt-get update && apt-get install -y git libzip-dev unzip
+#    - docker-php-ext-install zip pdo pdo_mysql
+#    - curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+#  script:
+#    - composer require "illuminate/support:$LARAVEL_VERSION" --no-update
+#    - composer require "orchestra/testbench:^$TESTBENCH_VERSION" --dev --no-update
+#    - composer update --prefer-dist --no-interaction --no-progress
+#    - mkdir -p storage/logs
+#    - cp .env.example .env
+#    - php artisan key:generate
+#    - php artisan migrate
+#    - ./vendor/bin/phpunit --coverage-text --colors=never --log-junit storage/logs/junit.xml || true
+#    - ls -la storage/logs
+#  artifacts:
+#    reports:
+#      junit:
+#        - ./storage/logs/junit.xml
+#    paths:
+#      - ./storage/logs/
+#    expire_in: 1 week
+#
+#test:laravel-12:
+#  <<: *laravel_test_definition
+#  variables:
+#    LARAVEL_VERSION: "12.*"
+#    TESTBENCH_VERSION: "8.0"
+#
+## Deploy stage - Only for main branch
+#deploy:
+#  stage: deploy
+#  image: composer:2
+#  script:
+#    - echo "Deploying to package repository..."
+#    # Add deployment logic here (Packagist, etc.)
+#  only:
+#    - main
+#  when: manual
+#
+## Nightly builds for continuous integration
+#nightly:
+#  stage: test
+#  image: php:8.4-cli
+#  services:
+#    - mysql:8.0
+#  variables:
+#    DB_CONNECTION: mysql
+#    DB_HOST: mysql
+#    DB_PORT: "3306"
+#    DB_DATABASE: $MYSQL_DATABASE
+#    DB_USERNAME: root
+#    DB_PASSWORD: $MYSQL_ROOT_PASSWORD
+#  before_script:
+#    - apt-get update && apt-get install -y git libzip-dev unzip
+#    - docker-php-ext-install zip pdo pdo_mysql
+#    - curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+#    - composer install --prefer-dist --no-interaction --no-progress
+#  script:
+#    - cp .env.example .env
+#    - php artisan key:generate
+#    - php artisan migrate
+#    - ./vendor/bin/phpunit --coverage-text --colors=never
+#    - ./vendor/bin/phpstan analyse src --level=7
+#  only:
+#    - schedules
+#  except:
+#    - tags
+#
+## Security scan job
+#security:
+#  stage: quality
+#  image: php:8.4-cli
+#  before_script:
+#    - apt-get update && apt-get install -y git
+#    - curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+#    - composer install --prefer-dist --no-interaction --no-progress
+#  script:
+#    - composer require roave/security-advisories:dev-latest --dev
+#    - composer update --dry-run
+#  allow_failure: true
+#
+## Performance testing
+#performance:
+#  stage: test
+#  image: php:8.4-cli
+#  before_script:
+#    - apt-get update && apt-get install -y git
+#    - curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+#    - composer install --prefer-dist --no-interaction --no-progress
+#  script:
+#    # Run performance tests if any
+#    - echo "Performance tests would run here"
+#  when: manual
+#  allow_failure: true
+#
+## Code coverage report
+#coverage:
+#  stage: quality
+#  image: php:8.4-cli
+#  before_script:
+#    - apt-get update && apt-get install -y git xdebug
+#    - curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+#    - composer install --prefer-dist --no-interaction --no-progress
+#  script:
+#    - XDEBUG_MODE=coverage ./vendor/bin/phpunit --coverage-html ./coverage-report
+#  artifacts:
+#    paths:
+#      - ./coverage-report/
+#    expire_in: 1 week
+#  coverage: '/^\s*Lines:\s*\d+.\d+\%/'
+#  only:
+#    - main
+#    - merge_requests
+
+publish:
+  image: curlimages/curl:latest
+  stage: publish
+  variables:
+    URL: "$CI_SERVER_PROTOCOL://$CI_SERVER_HOST:$CI_SERVER_PORT/api/v4/projects/$CI_PROJECT_ID/packages/composer?job_token=$CI_JOB_TOKEN"
+  script:
+    - version=$([[ -z "$CI_COMMIT_TAG" ]] && echo "branch=$CI_COMMIT_REF_NAME" || echo "tag=$CI_COMMIT_TAG")
+    - insecure=$([ "$CI_SERVER_PROTOCOL" = "http" ] && echo "--insecure" || echo "")
+    - response=$(curl -s -w "\n%{http_code}" $insecure --data $version $URL)
+    - code=$(echo "$response" | tail -n 1)
+    - body=$(echo "$response" | head -n 1)
+    # Output state information
+    - if [ $code -eq 201 ]; then
+      echo "Package created - Code $code - $body";
+      else
+      echo "Could not create package - Code $code - $body";
+      exit 1;
+      fi
