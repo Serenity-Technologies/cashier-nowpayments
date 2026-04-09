@@ -1,0 +1,42 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    /**
+     * Run the migrations.
+     */
+    public function up(): void
+    {
+        $prefix = config('cashier-nowpayments.prefix', 'cashier_nowpayments_');
+
+        Schema::create($prefix . 'plans', function (Blueprint $table) use ($prefix) {
+            $table->ulid('id')->primary();
+            $table->string('nowpayments_plan_id')->unique()->index();
+            $table->string('name');
+            $table->string('description')->nullable();
+            $table->decimal('amount', 10, 2);
+            $table->string('currency')->default(config('cashier-nowpayments.currency', 'usd'));
+            $table->integer('interval_days')->default(30);
+            $table->string('status')->default('active')->index();
+            $table->string('success_url')->nullable();
+            $table->string('cancel_url')->nullable();
+            $table->json('metadata')->nullable();
+            $table->timestamps();
+
+            $table->index(['status', 'currency']);
+        });
+    }
+
+    /**
+     * Reverse the migrations.
+     */
+    public function down(): void
+    {
+        $prefix = config('cashier-nowpayments.prefix', 'cashier_nowpayments_');
+        Schema::dropIfExists($prefix . 'plans');
+    }
+};
