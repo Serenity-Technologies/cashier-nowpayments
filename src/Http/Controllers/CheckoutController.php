@@ -9,13 +9,25 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Str;
 use Illuminate\View\View;
 use SerenityTechnologies\CashierNowPayments\Models\Customer;
-use SerenityTechnologies\NowPayments\DTOs\Request\{EstimateRequest, InvoiceRequest, MinAmountRequest};
+use SerenityTechnologies\CashierNowPayments\Models\Invoice;
+use SerenityTechnologies\NowPayments\DTOs\Request\{EstimateRequest, InvoiceRequest, MinAmountRequest, SubscriptionRequest};
 use SerenityTechnologies\NowPayments\Facades\NowPayments;
 
 class CheckoutController extends Controller
 {
+    /**
+     * Maximum number of retries for transient NOWPayments API failures.
+     */
+    protected const MAX_RETRIES = 3;
+
+    /**
+     * Delay (ms) between retries — exponential backoff: 500ms, 1000ms.
+     */
+    protected const RETRY_DELAY_MS = 500;
+
     /**
      * Display the checkout overlay.
      */
@@ -43,6 +55,8 @@ class CheckoutController extends Controller
             'success_url' => $validated['success_url'] ?? config('app.url'),
             'cancel_url' => $validated['cancel_url'] ?? config('app.url'),
             'pay_currency' => $validated['pay_currency'] ?? null,
+            // Server-side timeout so the frontend timer matches
+            'timeout_seconds' => config('cashier-nowpayments.checkout.payment_timeout_seconds', 900),
         ];
 
         return view('cashier-nowpayments::checkout', compact('checkoutData'));
@@ -63,6 +77,14 @@ class CheckoutController extends Controller
             'cancel_url' => 'sometimes|url',
         ]);
 
+        // Always generate a unique order ID to prevent collisions,
+        // even when the client supplies one — we prefix it.
+        $uniqueSuffix = Str::ulid()->toString();
+        $clientOrderId = $validated['order_id'] ?? null;
+        $orderId = $clientOrderId !== null
+            ? "CLIENT-{$clientOrderId}-{$uniqueSuffix}"
+            : "CHECKOUT-{$uniqueSuffix}";
+
         // Generate idempotency key to prevent duplicate payments
         $idempotencyKey = $this->generateIdempotencyKey($request, $validated);
 
@@ -74,17 +96,17 @@ class CheckoutController extends Controller
             }
 
             // Get estimate first
-            $estimate = NowPayments::getEstimate(new EstimateRequest(
+            $estimate = $this->withRetry(fn() => NowPayments::getEstimate(new EstimateRequest(
                 currencyFrom: $validated['currency'],
                 currencyTo: $validated['pay_currency'],
                 amount: $validated['amount'],
-            ));
+            )));
 
             // Check minimum payment amount using precise comparison
-            $minAmount = NowPayments::getMinAmount(new MinAmountRequest(
+            $minAmount = $this->withRetry(fn() => NowPayments::getMinAmount(new MinAmountRequest(
                 currencyFrom: $validated['currency'],
                 currencyTo: $validated['pay_currency'],
-            ));
+            )));
 
             if (bccomp((string) $estimate->estimated_amount, (string) $minAmount->min_amount, 8) < 0) {
                 return response()->json([
@@ -93,8 +115,6 @@ class CheckoutController extends Controller
                     'minimum' => $minAmount->min_amount,
                 ], 422);
             }
-
-            $orderId = $validated['order_id'] ?? 'CHECKOUT-' . \Illuminate\Support\Str::ulid()->toString();
 
             // Use PaymentBuilder for ALL checkouts (authenticated and guest)
             // This prevents double payment creation
@@ -124,8 +144,9 @@ class CheckoutController extends Controller
                 'price_amount' => $localPayment->amount,
                 'price_currency' => $localPayment->currency,
                 'qr_code' => $this->generateQRCode($localPayment->pay_address, (float) $localPayment->pay_amount),
-                'payment_url' => null, // PaymentBuilder doesn't return invoice_url for direct payments
+                'payment_url' => null,
                 'local_payment_id' => $localPayment->id,
+                'timeout_seconds' => config('cashier-nowpayments.checkout.payment_timeout_seconds', 900),
             ];
 
             // Cache response for idempotency (5 minutes)
@@ -157,28 +178,23 @@ class CheckoutController extends Controller
         ]);
 
         try {
-            $invoiceRequest = new InvoiceRequest(
-                priceAmount: $validated['amount'],
-                priceCurrency: $validated['currency'],
-                ipnCallbackUrl: route('cashier-nowpayments.webhook'),
-                orderId: $validated['order_id'] ?? 'INVOICE-' . \Illuminate\Support\Str::ulid()->toString(),
-                orderDescription: $validated['description'] ?? null,
-                successUrl: $validated['success_url'],
-                cancelUrl: $validated['cancel_url'],
-                isFixedRate: config('cashier-nowpayments.fixed_rate', false),
-            );
+            $invoice = $this->withRetry(function () use ($validated) {
+                $invoiceRequest = new InvoiceRequest(
+                    priceAmount: $validated['amount'],
+                    priceCurrency: $validated['currency'],
+                    ipnCallbackUrl: route('cashier-nowpayments.webhook'),
+                    orderId: $validated['order_id'] ?? 'INVOICE-' . Str::ulid()->toString(),
+                    orderDescription: $validated['description'] ?? null,
+                    successUrl: $validated['success_url'],
+                    cancelUrl: $validated['cancel_url'],
+                    isFixedRate: config('cashier-nowpayments.fixed_rate', false),
+                );
 
-            $invoice = NowPayments::createInvoice($invoiceRequest);
+                return NowPayments::createInvoice($invoiceRequest);
+            });
 
-            // Store invoice locally if user is authenticated
-            if ($request->user()) {
-                $request->user()->invoice($validated['amount'], $validated['currency'])
-                    ->withDescription($validated['description'] ?? '')
-                    ->withOrderId($invoice->order_id)
-                    ->withSuccessUrl($validated['success_url'])
-                    ->withCancelUrl($validated['cancel_url'])
-                    ->generate();
-            }
+            // Store invoice locally for ALL users (authenticated + guest)
+            $this->persistInvoice($request, $invoice);
 
             if ($request->expectsJson()) {
                 return response()->json([
@@ -200,6 +216,60 @@ class CheckoutController extends Controller
             }
 
             return redirect()->back()->with('error', 'Failed to create invoice.');
+        }
+    }
+
+    /**
+     * Create a subscription and redirect to payment page.
+     */
+    public function createSubscription(Request $request): RedirectResponse|JsonResponse
+    {
+        $validated = $request->validate([
+            'plan_id' => 'required|integer',
+            'success_url' => 'required|url',
+            'cancel_url' => 'required|url',
+        ]);
+
+        $billable = $request->user();
+
+        if ($billable === null) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Subscription checkout requires authentication.',
+            ], 401);
+        }
+
+        try {
+            $subscription = $this->withRetry(function () use ($validated) {
+                $subscriptionRequest = new SubscriptionRequest(
+                    subscriptionPlanId: $validated['plan_id'],
+                );
+
+                return NowPayments::createSubscription($subscriptionRequest);
+            });
+
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => true,
+                    'subscription_id' => $subscription->id,
+                    'subscription_url' => $subscription->subscription_url ?? null,
+                ]);
+            }
+
+            $redirectUrl = $subscription->subscription_url ?? config('app.url');
+
+            return redirect($redirectUrl);
+        } catch (\Exception $e) {
+            report($e);
+
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to create subscription.',
+                ], 500);
+            }
+
+            return redirect()->back()->with('error', 'Failed to create subscription.');
         }
     }
 
@@ -242,16 +312,16 @@ class CheckoutController extends Controller
         ]);
 
         try {
-            $estimate = NowPayments::getEstimate(new EstimateRequest(
+            $estimate = $this->withRetry(fn() => NowPayments::getEstimate(new EstimateRequest(
                 currencyFrom: $validated['from_currency'],
                 currencyTo: $validated['to_currency'],
                 amount: $validated['amount'],
-            ));
+            )));
 
-            $minAmount = NowPayments::getMinAmount(new MinAmountRequest(
+            $minAmount = $this->withRetry(fn() => NowPayments::getMinAmount(new MinAmountRequest(
                 currencyFrom: $validated['from_currency'],
                 currencyTo: $validated['to_currency'],
-            ));
+            )));
 
             return response()->json([
                 'success' => true,
@@ -270,21 +340,19 @@ class CheckoutController extends Controller
     /**
      * Generate QR code data URI for payment address.
      *
-     * Uses a local data URI scheme rather than an external API to avoid
-     * leaking payment details to third parties.
+     * Returns the raw payment URI. The frontend renders it as a QR code
+     * using the built-in qrcode.js library loaded in the checkout view.
      */
     protected function generateQRCode(string $address, float $amount): string
     {
-        $uri = sprintf('%s:%s?amount=%s', 'crypto', $address, $amount);
-
-        // Return the URI directly — frontend can use a QR library to render it.
-        // For production, install bacon/bacon-qr-code and generate locally:
-        // composer require bacon/bacon-qr-code
-        return $uri;
+        return sprintf('crypto:%s?amount=%s', $address, $amount);
     }
 
     /**
      * Generate an idempotency key from request parameters.
+     *
+     * Always includes a server-generated ULID component to prevent
+     * collisions even when identical requests come from different tabs.
      */
     protected function generateIdempotencyKey(Request $request, array $validated): string
     {
@@ -295,9 +363,51 @@ class CheckoutController extends Controller
             'currency' => $validated['currency'],
             'pay_currency' => $validated['pay_currency'],
             'order_id' => $validated['order_id'] ?? '',
+            'session' => $request->session()->getId(),
         ];
 
         return 'checkout.idempotency.' . hash('sha256', json_encode($params));
+    }
+
+    /**
+     * Persist an invoice locally for both authenticated and guest users.
+     */
+    protected function persistInvoice(Request $request, object $invoice): void
+    {
+        $invoiceModel = config('cashier-nowpayments.model.invoice', Invoice::class);
+
+        if ($request->user()) {
+            // Authenticated — use the billable's invoice builder
+            $request->user()->invoice($invoice->price_amount, $invoice->price_currency)
+                ->withDescription($invoice->order_description ?? '')
+                ->withOrderId($invoice->order_id)
+                ->withSuccessUrl($invoice->success_url ?? '')
+                ->withCancelUrl($invoice->cancel_url ?? '')
+                ->generate();
+
+            return;
+        }
+
+        // Guest — create a minimal invoice record tied to guest customer
+        $customer = $this->getOrCreateGuestCustomer($request);
+
+        /** @var Invoice $localInvoice */
+        $localInvoice = new $invoiceModel();
+        $localInvoice->fill([
+            'customer_id' => $customer->id,
+            'nowpayments_invoice_id' => $invoice->id,
+            'status' => $invoice->payment_status ?? 'active',
+            'currency' => $invoice->price_currency,
+            'amount' => $invoice->price_amount,
+            'amount_paid' => 0,
+            'order_id' => $invoice->order_id,
+            'order_description' => $invoice->order_description,
+            'invoice_url' => $invoice->invoice_url ?? null,
+            'success_url' => $invoice->success_url ?? null,
+            'cancel_url' => $invoice->cancel_url ?? null,
+            'metadata' => ['source' => 'guest_checkout'],
+        ]);
+        $localInvoice->save();
     }
 
     /**
@@ -305,8 +415,6 @@ class CheckoutController extends Controller
      */
     protected function getOrCreateGuestCustomer(Request $request): mixed
     {
-        // For guest users, create a minimal customer record.
-        // In production, you may want to tie this to session/cart data.
         $customerModel = config('cashier-nowpayments.model.customer', Customer::class);
 
         $sessionKey = $request->session()->getId();
@@ -333,8 +441,41 @@ class CheckoutController extends Controller
             $customer->save();
         }
 
-        // Return the billable model associated with the customer (if any)
-        // or the customer itself as a fallback for guest checkouts.
         return $customer->billable ?? $customer;
+    }
+
+    /**
+     * Execute a callback with retry logic for transient API failures.
+     *
+     * Uses exponential backoff: 500ms, 1000ms between attempts.
+     */
+    protected function withRetry(callable $callback, int $maxRetries = self::MAX_RETRIES): mixed
+    {
+        $attempt = 0;
+
+        while (true) {
+            try {
+                return $callback();
+            } catch (\Throwable $e) {
+                $attempt++;
+
+                if ($attempt > $maxRetries) {
+                    throw $e;
+                }
+
+                // Only retry on transient errors (connection timeouts, etc.)
+                $message = strtolower($e->getMessage());
+                $isTransient = str_contains($message, 'connection')
+                    || str_contains($message, 'timeout')
+                    || str_contains($message, 'curl')
+                    || str_contains($message, 'stream');
+
+                if (!$isTransient) {
+                    throw $e;
+                }
+
+                usleep(self::RETRY_DELAY_MS * 1000 * (2 ** ($attempt - 1)));
+            }
+        }
     }
 }

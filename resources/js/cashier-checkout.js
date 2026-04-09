@@ -107,6 +107,28 @@ class CashierCheckout {
     }
 
     /**
+     * Create a subscription directly via API (requires authentication).
+     *
+     * @param {Object} options
+     * @param {number} options.plan_id - NOWPayments plan ID
+     * @param {string} [options.success_url] - Success redirect URL
+     * @param {string} [options.cancel_url] - Cancel redirect URL
+     * @returns {Promise<Object>}
+     */
+    static async createSubscription(options) {
+        const response = await fetch('/cashier-nowpayments/checkout/subscription', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': this.getCSRFToken()
+            },
+            body: JSON.stringify(options)
+        });
+
+        return response.json();
+    }
+
+    /**
      * Get payment estimate.
      *
      * @param {number} amount

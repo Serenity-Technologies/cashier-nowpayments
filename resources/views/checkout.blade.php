@@ -9,6 +9,9 @@
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
 
+    <!-- QR Code Library (client-side, no external API calls) -->
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+
     <style>
         /* Overlay styles */
         .checkout-overlay {
@@ -182,7 +185,7 @@
 
             <!-- QR Code -->
             <div class="mb-6 text-center">
-                <img id="qrCode" src="" alt="QR Code" class="mx-auto rounded-lg border-2 border-gray-200" style="max-width: 200px;">
+                <div id="qrCodeContainer" class="inline-block p-2 bg-white rounded-lg border-2 border-gray-200"></div>
             </div>
 
             <!-- Payment Address -->
@@ -257,7 +260,9 @@ let selectedCurrency = null;
 let currentPayment = null;
 let statusCheckInterval = null;
 let timerInterval = null;
-let timeRemaining = 900; // 15 minutes
+// Use server-provided timeout (seconds), fall back to 15 minutes
+let timeRemaining = CheckoutConfig.timeout_seconds ?? 900;
+let qrCodeInstance = null;
 
 // Initialize
 document.addEventListener('DOMContentLoaded', function() {
@@ -362,6 +367,10 @@ async function createPayment() {
 
         if (data.success) {
             currentPayment = data;
+            // Update timeout from server response if provided
+            if (data.timeout_seconds) {
+                timeRemaining = data.timeout_seconds;
+            }
             showPaymentDetails(data);
             startStatusPolling();
             startTimer();
@@ -385,7 +394,26 @@ function showPaymentDetails(payment) {
 
     document.getElementById('payAmountDisplay').textContent = `${payment.pay_amount} ${payment.pay_currency.toUpperCase()}`;
     document.getElementById('payAddress').textContent = payment.pay_address;
-    document.getElementById('qrCode').src = payment.qr_code;
+
+    // Render QR code using client-side library
+    renderQRCode(payment.pay_address, payment.pay_amount);
+}
+
+// Render QR code using qrcode.js library
+function renderQRCode(address, amount) {
+    const container = document.getElementById('qrCodeContainer');
+    container.innerHTML = '';
+
+    const uri = `crypto:${address}?amount=${amount}`;
+
+    qrCodeInstance = new QRCode(container, {
+        text: uri,
+        width: 200,
+        height: 200,
+        colorDark: '#000000',
+        colorLight: '#ffffff',
+        correctLevel: QRCode.CorrectLevel.M
+    });
 }
 
 // Copy payment address
@@ -469,7 +497,7 @@ function retryPayment() {
     document.getElementById('checkoutForm').classList.remove('hidden');
     document.getElementById('payButton').disabled = false;
     document.getElementById('payButton').innerHTML = '{{ __("Continue to Payment") }}';
-    timeRemaining = 900;
+    timeRemaining = CheckoutConfig.timeout_seconds ?? 900;
 }
 
 // Show error
@@ -487,6 +515,38 @@ function showError(message) {
 function closeCheckout() {
     window.location.href = CheckoutConfig.cancel_url;
 }
+
+// -------------------------------------------------------
+// postMessage support for JS modal flow (CashierCheckout.open)
+// -------------------------------------------------------
+(function() {
+    // Notify parent window when payment completes (for iframe/modal flow)
+    var _origPaymentCompleted = paymentCompleted;
+    paymentCompleted = function() {
+        _origPaymentCompleted();
+        try {
+            if (window.parent && window.parent !== window) {
+                window.parent.postMessage({
+                    type: 'cashier-checkout-complete',
+                    payload: currentPayment
+                }, '*');
+            }
+        } catch (e) { /* cross-origin — parent handles via polling */ }
+    };
+
+    // Notify parent window on cancel
+    var _origClose = closeCheckout;
+    closeCheckout = function() {
+        try {
+            if (window.parent && window.parent !== window) {
+                window.parent.postMessage({
+                    type: 'cashier-checkout-cancel'
+                }, '*');
+            }
+        } catch (e) { /* fall through to redirect */ }
+        _origClose();
+    };
+})();
 </script>
 
 </body>
