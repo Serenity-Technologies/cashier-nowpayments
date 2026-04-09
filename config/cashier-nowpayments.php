@@ -144,6 +144,20 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Dashboard Credentials (Optional)
+    |--------------------------------------------------------------------------
+    |
+    | Email and password for dashboard authentication.
+    | Required for certain endpoints like payouts and conversions.
+    | JWT tokens obtained with these credentials expire in 5 minutes.
+    |
+    */
+
+    'dashboard_email' => env('NOWPAYMENTS_DASHBOARD_EMAIL', ''),
+    'dashboard_password' => env('NOWPAYMENTS_DASHBOARD_PASSWORD', ''),
+
+    /*
+    |--------------------------------------------------------------------------
     | Payment Status Authorization
     |--------------------------------------------------------------------------
     |

@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use SerenityTechnologies\CashierNowPayments\Models\Payout;
 use SerenityTechnologies\CashierNowPayments\PayoutBuilder;
 use SerenityTechnologies\NowPayments\DTOs\Request\PayoutAddressRequest;
+use SerenityTechnologies\NowPayments\Exceptions\NowPaymentsException;
 use SerenityTechnologies\NowPayments\Facades\NowPayments;
 
 trait ManagesPayouts
@@ -61,6 +62,7 @@ trait ManagesPayouts
 
     /**
      * Validate a payout address.
+     * @throws NowPaymentsException
      */
     public function validatePayoutAddress(string $address, string $currency, ?string $extraId = null): bool
     {
@@ -83,6 +85,7 @@ trait ManagesPayouts
 
     /**
      * Get payout fee estimate.
+     * @throws NowPaymentsException
      */
     public static function payoutFeeEstimate(): \SerenityTechnologies\NowPayments\DTOs\Response\FeeEstimateResponse
     {

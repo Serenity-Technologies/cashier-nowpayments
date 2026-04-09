@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace SerenityTechnologies\CashierNowPayments\Concerns;
 
+use SerenityTechnologies\NowPayments\DTOs\Request\UpdatePlanRequest;
 use SerenityTechnologies\NowPayments\Facades\NowPayments;
 
 trait ManagesPlans
@@ -19,7 +20,7 @@ trait ManagesPlans
     /**
      * Update a subscription plan.
      */
-    public static function updatePlan(string $planId, array $data): \SerenityTechnologies\NowPayments\DTOs\Response\PlanResponse
+    public static function updatePlan(string $planId, UpdatePlanRequest $data): \SerenityTechnologies\NowPayments\DTOs\Response\PlanResponse
     {
         return NowPayments::updatePlan($planId, $data);
     }
