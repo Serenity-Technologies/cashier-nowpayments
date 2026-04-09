@@ -1,0 +1,40 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    /**
+     * Run the migrations.
+     */
+    public function up(): void
+    {
+        $prefix = config('cashier-nowpayments.prefix', 'cashier_nowpayments_');
+
+        Schema::create($prefix . 'customers', function (Blueprint $table) {
+            $table->ulid('id')->primary();
+            $table->ulidMorphs('billable');
+            $table->string('nowpayments_customer_id')->unique()->nullable();
+            $table->string('email')->nullable()->index();
+            $table->string('name')->nullable();
+            $table->json('metadata')->nullable();
+            $table->timestamp('trial_ends_at')->nullable();
+            $table->softDeletes();
+            $table->timestamps();
+
+            $table->index(['billable_type', 'billable_id']);
+        });
+    }
+
+    /**
+     * Reverse the migrations.
+     */
+    public function down(): void
+    {
+        $prefix = config('cashier-nowpayments.prefix', 'cashier_nowpayments_');
+
+        Schema::dropIfExists($prefix . 'customers');
+    }
+};
