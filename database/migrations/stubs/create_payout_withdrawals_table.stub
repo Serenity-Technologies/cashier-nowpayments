@@ -16,12 +16,12 @@ return new class extends Migration
         Schema::create($prefix . 'payout_withdrawals', function (Blueprint $table) use ($prefix) {
             $table->ulid('id')->primary();
             $table->ulid('payout_id')->index();
-            $table->string('nowpayments_withdrawal_id')->nullable()->index();
+            $table->string('nowpayments_withdrawal_id')->nullable()->index('cnp_payout_withdrawals_np_withdrawal_id_index');
             $table->string('currency');
             $table->decimal('amount', 20, 8);
             $table->string('address');
             $table->string('extra_id')->nullable();
-            $table->string('status')->index();
+            $table->string('status')->index('cnp_payout_withdrawals_status_index');
             $table->string('hash')->nullable();
             $table->text('error')->nullable();
             $table->timestamp('processed_at')->nullable();
@@ -33,7 +33,7 @@ return new class extends Migration
                 ->on($prefix . 'payouts')
                 ->cascadeOnDelete();
 
-            $table->index(['status', 'created_at']);
+            $table->index(['status', 'created_at'], 'cnp_payout_withdrawals_status_created_at_index');
         });
     }
 

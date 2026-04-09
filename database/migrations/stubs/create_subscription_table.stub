@@ -18,7 +18,7 @@ return new class extends Migration
             $table->ulid('customer_id')->index();
             $table->string('type')->default('default')->index();
             $table->string('nowpayments_plan_id')->index();
-            $table->string('nowpayments_subscription_id')->unique()->index();
+            $table->string('nowpayments_subscription_id')->unique('cashier_np_subscriptions_np_subscription_id_unique')->index();
             $table->string('status')->index();
             $table->string('currency')->default(config('cashier-nowpayments.currency', 'usd'));
             $table->decimal('total_price', 10, 2);

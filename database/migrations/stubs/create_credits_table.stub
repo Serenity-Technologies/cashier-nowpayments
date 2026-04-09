@@ -40,9 +40,9 @@ return new class extends Migration
                 ->nullOnDelete();
 
             // Composite index for credit balance queries
-            $table->index(['customer_id', 'applied_at', 'expires_at']);
-            $table->index(['type', 'created_at']);
-            $table->index(['reference_type', 'reference_id']);
+            $table->index(['customer_id', 'applied_at', 'expires_at'], 'cnp_credit_balance_index');
+            $table->index(['type', 'created_at'], 'credit_type_index');
+            $table->index(['reference_type', 'reference_id'], 'cnp_credit_reference_index');
         });
     }
 
