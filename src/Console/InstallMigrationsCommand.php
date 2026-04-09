@@ -30,13 +30,13 @@ class InstallMigrationsCommand extends Command
         $prefix = config('cashier-nowpayments.prefix', 'cashier_nowpayments_');
         return [
             "create_{$prefix}customer_table.php" => 'create_customer_table.stub',
+            "create_{$prefix}plans_table.php" => 'create_plans_table.stub',
             "create_{$prefix}subscription_table.php" => 'create_subscription_table.stub',
             "create_{$prefix}subscription_item_table.php" => 'create_subscription_item_table.stub',
             "create_{$prefix}payment_table.php" => 'create_payment_table.stub',
             "create_{$prefix}invoice_table.php" => 'create_invoice_table.stub',
             "create_{$prefix}payout_table.php" => 'create_payout_table.stub',
             "create_{$prefix}credits_table.php" => 'create_credits_table.stub',
-            "create_{$prefix}plans_table.php" => 'create_plans_table.stub',
             "create_{$prefix}payout_withdrawals_table.php" => 'create_payout_withdrawals_table.stub',
         ];
     }
@@ -70,10 +70,11 @@ class InstallMigrationsCommand extends Command
         $published = 0;
         $skipped = 0;
 
+        $counter = 1;
         foreach ($this->stubs() as $stubName => $stubFile) {
             $stubContent = $this->files->get($stubsPath . '/' . $stubFile);
             $timestamp = now()->format('Y_m_d_His');
-            $targetFile = "{$timestamp}_{$stubName}";
+            $targetFile = "{$timestamp}.{$counter}_{$stubName}";
             $targetFilepath = $targetPath . '/' . $targetFile;
 
             if ($this->files->exists($targetFilepath) && !$this->option('force')) {
@@ -87,6 +88,7 @@ class InstallMigrationsCommand extends Command
 
             $this->components->twoColumnDetail($targetFile, '<fg=green;options=bold>CREATED</>');
             $published++;
+            $counter++;
         }
 
         $this->newLine();

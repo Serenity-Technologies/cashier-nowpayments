@@ -10,7 +10,7 @@ return new class extends Migration
     {
         $prefix = config('cashier-nowpayments.prefix', 'cashier_nowpayments_');
 
-        Schema::create($prefix . 'invoices', function (Blueprint $table) {
+        Schema::create($prefix . 'invoices', function (Blueprint $table) use ($prefix) {
             $table->ulid('id')->primary();
             $table->ulid('customer_id')->nullable()->index();
             $table->ulidMorphs('billable');
@@ -33,8 +33,6 @@ return new class extends Migration
                 ->references('id')
                 ->on($prefix . 'customers')
                 ->nullOnDelete();
-
-            $table->index(['billable_type', 'billable_id']);
         });
     }
 

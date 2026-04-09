@@ -33,8 +33,6 @@ return new class extends Migration
                 ->references('id')
                 ->on($prefix . 'customers')
                 ->nullOnDelete();
-
-            $table->index(['billable_type', 'billable_id']);
             $table->index(['status', 'created_at']);
         });
     }
