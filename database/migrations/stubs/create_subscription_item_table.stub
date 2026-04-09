@@ -1,0 +1,34 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        $prefix = config('cashier-nowpayments.prefix', 'cashier_nowpayments_');
+
+        Schema::create($prefix . 'subscription_items', function (Blueprint $table) use ($prefix) {
+            $table->ulid('id')->primary();
+            $table->ulid('subscription_id')->index();
+            $table->string('nowpayments_plan_id');
+            $table->string('description')->nullable();
+            $table->decimal('amount', 10, 2);
+            $table->integer('quantity')->default(1);
+            $table->timestamps();
+
+            $table->foreign('subscription_id')
+                ->references('id')
+                ->on($prefix . 'subscriptions')
+                ->onDelete('cascade');
+        });
+    }
+
+    public function down(): void
+    {
+        $prefix = config('cashier-nowpayments.prefix', 'cashier_nowpayments_');
+        Schema::dropIfExists($prefix . 'subscription_items');
+    }
+};
