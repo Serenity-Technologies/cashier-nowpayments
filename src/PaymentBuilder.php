@@ -9,11 +9,13 @@ use Illuminate\Support\Facades\DB;
 use SerenityTechnologies\CashierNowPayments\Events\PaymentCreated;
 use SerenityTechnologies\CashierNowPayments\Models\Customer;
 use SerenityTechnologies\CashierNowPayments\Models\Payment;
+use SerenityTechnologies\CashierNowPayments\Support\GeneratesWebhookUrl;
 use SerenityTechnologies\NowPayments\DTOs\Request\PaymentRequest;
 use SerenityTechnologies\NowPayments\Facades\NowPayments;
 
 class PaymentBuilder
 {
+    use GeneratesWebhookUrl;
     /**
      * The billable model.
      */
@@ -267,15 +269,5 @@ class PaymentBuilder
         $payment->save();
 
         return $payment;
-    }
-
-    /**
-     * Get the webhook URL for IPN callbacks.
-     */
-    protected function getWebhookUrl(): string
-    {
-        $path = config('cashier-nowpayments.webhook.path', '/nowpayments/webhook');
-
-        return rtrim(config('app.url', 'http://localhost'), '/') . $path;
     }
 }

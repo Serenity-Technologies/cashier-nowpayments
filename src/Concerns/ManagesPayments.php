@@ -29,7 +29,7 @@ trait ManagesPayments
      */
     public function payments(): HasMany
     {
-        $customer = $this->createOrGetCustomer();
+        $customer = $this->customer ?? $this->createOrGetCustomer();
 
         return $customer->payments();
     }
