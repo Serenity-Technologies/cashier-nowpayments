@@ -174,9 +174,7 @@ class InvoiceBuilder
     {
         $response = $this->create();
 
-        $invoice = $this->persistInvoice($response);
-
-        return $invoice;
+        return $this->persistInvoice($response);
     }
 
     /**

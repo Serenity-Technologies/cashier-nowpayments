@@ -204,9 +204,9 @@ class PaymentBuilder
             priceAmount: $this->amount,
             priceCurrency: $this->currency,
             payCurrency: $this->payCurrency ?? config('cashier-nowpayments.currency', 'usd'),
-            orderDescription: $this->description,
-            orderId: $this->orderId ?? 'ORDER-' . \Illuminate\Support\Str::ulid()->toString(),
             ipnCallbackUrl: $this->getWebhookUrl(),
+            orderId: $this->orderId ?? 'ORDER-' . \Illuminate\Support\Str::ulid()->toString(),
+            orderDescription: $this->description,
             isFixedRate: $this->fixedRate,
             isFeePaidByUser: $this->feePaidByUser,
         );
@@ -224,6 +224,7 @@ class PaymentBuilder
 
     /**
      * Create and persist the payment.
+     * @throws \Throwable
      */
     public function charge(): Payment
     {
