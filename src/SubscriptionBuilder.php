@@ -60,7 +60,7 @@ class SubscriptionBuilder
     /**
      * Create a new subscription builder instance.
      */
-    public function __construct(Model $billable, Customer $customer, string $type, int $planId)
+    public function __construct(Model $billable, Customer $customer, string $type, string $planId)
     {
         $this->billable = $billable;
         $this->customer = $customer;
@@ -127,7 +127,7 @@ class SubscriptionBuilder
         $plan = $this->getPlan();
 
         $subscriptionRequest = new SubscriptionRequest(
-            subscriptionPlanId: $this->planId,
+            subscriptionPlanId: (int) $this->planId,
         );
 
         $response = NowPayments::createSubscription($subscriptionRequest);
