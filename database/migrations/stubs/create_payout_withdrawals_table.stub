@@ -1,0 +1,48 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    /**
+     * Run the migrations.
+     */
+    public function up(): void
+    {
+        $prefix = config('cashier-nowpayments.prefix', 'cashier_nowpayments_');
+
+        Schema::create($prefix . 'payout_withdrawals', function (Blueprint $table) use ($prefix) {
+            $table->ulid('id')->primary();
+            $table->ulid('payout_id')->index();
+            $table->string('nowpayments_withdrawal_id')->nullable()->index();
+            $table->string('currency');
+            $table->decimal('amount', 20, 8);
+            $table->string('address');
+            $table->string('extra_id')->nullable();
+            $table->string('status')->index();
+            $table->string('hash')->nullable();
+            $table->text('error')->nullable();
+            $table->timestamp('processed_at')->nullable();
+            $table->json('metadata')->nullable();
+            $table->timestamps();
+
+            $table->foreign('payout_id')
+                ->references('id')
+                ->on($prefix . 'payouts')
+                ->cascadeOnDelete();
+
+            $table->index(['status', 'created_at']);
+        });
+    }
+
+    /**
+     * Reverse the migrations.
+     */
+    public function down(): void
+    {
+        $prefix = config('cashier-nowpayments.prefix', 'cashier_nowpayments_');
+        Schema::dropIfExists($prefix . 'payout_withdrawals');
+    }
+};
