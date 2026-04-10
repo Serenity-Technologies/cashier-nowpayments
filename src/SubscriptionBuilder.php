@@ -58,6 +58,11 @@ class SubscriptionBuilder
     protected array $metadata = [];
 
     /**
+     * Sub-partner ID (alternative to email for NOWPayments API).
+     */
+    protected ?int $subPartnerId = null;
+
+    /**
      * Create a new subscription builder instance.
      */
     public function __construct(Model $billable, Customer $customer, string $type, int|string $planId)
@@ -119,6 +124,20 @@ class SubscriptionBuilder
     }
 
     /**
+     * Set the sub-partner ID (alternative to providing email).
+     *
+     * NOWPayments requires at least one of email or sub_partner_id.
+     * Use this when you don't have a subscriber email but have a
+     * sub-partner account.
+     */
+    public function withSubPartnerId(int $subPartnerId): self
+    {
+        $this->subPartnerId = $subPartnerId;
+
+        return $this;
+    }
+
+    /**
      * Create the subscription.
      * @throws NowPaymentsException
      */
@@ -126,8 +145,20 @@ class SubscriptionBuilder
     {
         $plan = $this->getPlan();
 
+        // NOWPayments requires at least one of email or sub_partner_id
+        $email = $this->resolveSubscriberEmail();
+
+        if ($email === null && $this->subPartnerId === null) {
+            throw new \InvalidArgumentException(
+                'NOWPayments requires a valid email or sub_partner_id to create a subscription. '
+                . 'Use ->withSubPartnerId() or ensure your billable model has an email address.'
+            );
+        }
+
         $subscriptionRequest = new SubscriptionRequest(
             subscriptionPlanId: (int) $this->planId,
+            subPartnerId: $this->subPartnerId,
+            email: $email,
         );
 
         $response = NowPayments::createSubscription($subscriptionRequest);
@@ -140,9 +171,42 @@ class SubscriptionBuilder
     }
 
     /**
+     * Resolve the subscriber email for the NOWPayments API.
+     *
+     * NOWPayments requires at least one of email or sub_partner_id when
+     * creating a subscription. We pull the email from the billable model
+     * or the customer record as a fallback.
+     */
+    protected function resolveSubscriberEmail(): ?string
+    {
+        // Try billable model first
+        if (method_exists($this->billable, 'getEmailForPasswordReset')) {
+            $email = $this->billable->email ?? null;
+            if ($email !== null && filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                return $email;
+            }
+        }
+
+        // Try customer record
+        if ($this->customer->email !== null && filter_var($this->customer->email, FILTER_VALIDATE_EMAIL)) {
+            return $this->customer->email;
+        }
+
+        // Fall back to billable's getBillableEmail if available
+        if (method_exists($this->billable, 'getBillableEmail')) {
+            $email = $this->billable->getBillableEmail();
+            if ($email !== null && filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                return $email;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Get the subscription plan.
      *
-     * @throws \InvalidArgumentException If the plan does not exist.
+     * @throws \InvalidArgumentException|NowPaymentsException If the plan does not exist.
      */
     protected function getPlan(): \SerenityTechnologies\NowPayments\DTOs\Response\PlanResponse
     {
