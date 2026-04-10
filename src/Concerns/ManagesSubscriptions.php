@@ -15,7 +15,7 @@ trait ManagesSubscriptions
     /**
      * Begin creating a new subscription.
      */
-    public function newSubscription(string $type, int $planId): SubscriptionBuilder
+    public function newSubscription(string $type, int|string $planId): SubscriptionBuilder
     {
         $customer = $this->createOrGetCustomer();
 

@@ -35,7 +35,7 @@ class SubscriptionBuilder
     /**
      * The NOWPayments plan ID.
      */
-    protected string $planId;
+    protected int|string $planId;
 
     /**
      * Subscription quantity.
@@ -60,12 +60,12 @@ class SubscriptionBuilder
     /**
      * Create a new subscription builder instance.
      */
-    public function __construct(Model $billable, Customer $customer, string $type, string $planId)
+    public function __construct(Model $billable, Customer $customer, string $type, int|string $planId)
     {
         $this->billable = $billable;
         $this->customer = $customer;
         $this->type = $type;
-        $this->planId = $planId;
+        $this->planId = is_int($planId) ? (string) $planId : $planId;
     }
 
     /**
@@ -127,7 +127,7 @@ class SubscriptionBuilder
         $plan = $this->getPlan();
 
         $subscriptionRequest = new SubscriptionRequest(
-            subscriptionPlanId: $this->planId,
+            subscriptionPlanId: (int) $this->planId,
         );
 
         $response = NowPayments::createSubscription($subscriptionRequest);
@@ -147,7 +147,7 @@ class SubscriptionBuilder
     protected function getPlan(): \SerenityTechnologies\NowPayments\DTOs\Response\PlanResponse
     {
         try {
-            return NowPayments::getPlan($this->planId);
+            return NowPayments::getPlan((int) $this->planId);
         } catch (NowPaymentsException $e) {
             // If plan not found, throw descriptive error instead of creating one with 0 amount
             if (str_contains($e->getMessage(), 'not found') || $e->getCode() === 404) {
