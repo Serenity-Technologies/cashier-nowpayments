@@ -127,7 +127,7 @@ class SubscriptionBuilder
         $plan = $this->getPlan();
 
         $subscriptionRequest = new SubscriptionRequest(
-            subscriptionPlanId: (int) $this->planId,
+            subscriptionPlanId: $this->planId,
         );
 
         $response = NowPayments::createSubscription($subscriptionRequest);
