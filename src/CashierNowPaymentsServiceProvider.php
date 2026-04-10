@@ -7,6 +7,7 @@ namespace SerenityTechnologies\CashierNowPayments;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 use SerenityTechnologies\CashierNowPayments\Console\InstallMigrationsCommand;
+use SerenityTechnologies\CashierNowPayments\Console\PruneWebhookLogsCommand;
 use SerenityTechnologies\CashierNowPayments\Http\Controllers\WebhookController;
 use SerenityTechnologies\CashierNowPayments\Http\Middleware\EnsurePaymentBelongsToUser;
 use SerenityTechnologies\NowPayments\Handlers\IpnHandler;
@@ -45,6 +46,7 @@ class CashierNowPaymentsServiceProvider extends ServiceProvider
         if ($this->app->runningInConsole()) {
             $this->commands([
                 InstallMigrationsCommand::class,
+                PruneWebhookLogsCommand::class,
             ]);
         }
 

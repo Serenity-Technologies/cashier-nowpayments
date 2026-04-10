@@ -60,6 +60,7 @@ return [
         'payout_withdrawal' => \SerenityTechnologies\CashierNowPayments\Models\PayoutWithdrawal::class,
         'credit' => \SerenityTechnologies\CashierNowPayments\Models\Credit::class,
         'plan' => \SerenityTechnologies\CashierNowPayments\Models\Plan::class,
+        'webhook_log' => \SerenityTechnologies\CashierNowPayments\Models\WebhookLog::class,
     ],
 
     /*
@@ -74,6 +75,27 @@ return [
     'webhook' => [
         'path' => env('CASHIER_NOWPAYMENTS_WEBHOOK_PATH', '/nowpayments/webhook'),
         'tolerance' => env('CASHIER_NOWPAYMENTS_WEBHOOK_TOLERANCE', 300),
+
+        /*
+        |------------------------------------------------------------------
+        | Webhook Logging
+        |------------------------------------------------------------------
+        |
+        | When enabled, all incoming webhooks are persisted to the database
+        | for audit and debugging. Includes signature validation status,
+        | payload, IP address, and processing outcome.
+        */
+        'log_enabled' => env('CASHIER_NOWPAYMENTS_WEBHOOK_LOG', true),
+
+        /*
+        |------------------------------------------------------------------
+        | Log Retention
+        |------------------------------------------------------------------
+        |
+        | Number of days to retain webhook logs. Set to 0 to keep indefinitely.
+        | Use `php artisan cashier-nowpayments:prune-webhook-logs` to clean up.
+        */
+        'log_retention_days' => env('CASHIER_NOWPAYMENTS_WEBHOOK_LOG_RETENTION', 30),
     ],
 
     /*

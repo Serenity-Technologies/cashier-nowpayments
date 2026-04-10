@@ -38,6 +38,7 @@ class InstallMigrationsCommand extends Command
             "create_{$prefix}payout_table.php" => 'create_payout_table.stub',
             "create_{$prefix}credits_table.php" => 'create_credits_table.stub',
             "create_{$prefix}payout_withdrawals_table.php" => 'create_payout_withdrawals_table.stub',
+            "create_{$prefix}webhook_logs_table.php" => 'create_webhook_log_table.stub',
         ];
     }
 

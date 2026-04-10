@@ -23,6 +23,7 @@ use SerenityTechnologies\CashierNowPayments\Models\Invoice;
 use SerenityTechnologies\CashierNowPayments\Models\Payment;
 use SerenityTechnologies\CashierNowPayments\Models\Payout;
 use SerenityTechnologies\CashierNowPayments\Models\Subscription;
+use SerenityTechnologies\CashierNowPayments\Models\WebhookLog;
 use SerenityTechnologies\NowPayments\Handlers\IpnHandler;
 use SerenityTechnologies\NowPayments\Support\HandlesIpnWebhooks;
 
@@ -35,10 +36,26 @@ class WebhookController extends Controller
      */
     public function __invoke(Request $request, IpnHandler $ipnHandler): JsonResponse
     {
+        $rawPayload = $request->getContent();
+        $signature = $request->header('x-nowpayments-sig');
+
+        // Log the incoming webhook for audit/debugging
+        $webhookLog = null;
+        if (config('cashier-nowpayments.webhook.log_enabled', true)) {
+            $webhookLog = $this->logWebhook($request, $rawPayload, $signature);
+        }
+
         try {
             // Secondary HMAC signature verification for audit
-            if (!$this->verifySignature($request)) {
+            $signatureValid = $this->verifySignature($request);
+
+            if (!$signatureValid) {
                 report('NOWPayments webhook: HMAC signature mismatch.');
+
+                $webhookLog?->update([
+                    'signature_valid' => false,
+                    'processing_error' => 'HMAC signature mismatch',
+                ]);
 
                 return response()->json(['error' => 'Invalid signature'], 403);
             }
@@ -49,8 +66,27 @@ class WebhookController extends Controller
             if (!$this->validateTimestamp($data)) {
                 report('NOWPayments webhook: Timestamp outside tolerance.');
 
+                $webhookLog?->update([
+                    'signature_valid' => true,
+                    'payload' => $data,
+                    'processing_error' => 'Timestamp outside tolerance',
+                ]);
+
                 return response()->json(['error' => 'Timestamp outside tolerance'], 403);
             }
+
+            // Update the log with parsed payload and event type
+            $webhookLog?->update([
+                'signature_valid' => true,
+                'payload' => $data,
+                'payload_id' => $data['id'] ?? $data['payment_id'] ?? null,
+                'event_type' => $this->detectEventType($data),
+                'payment_id' => $data['payment_id'] ?? null,
+                'invoice_id' => $data['invoice_id'] ?? null,
+                'subscription_id' => $data['subscription_id'] ?? null,
+                'payout_id' => $data['id'] ?? $data['batch_withdrawal_id'] ?? null,
+                'payment_status' => $data['payment_status'] ?? $data['status'] ?? null,
+            ]);
 
             // Process the webhook data and update local models
             $this->processWebhookData($data);
@@ -58,9 +94,13 @@ class WebhookController extends Controller
             // Fire appropriate events based on payload shape (from trait)
             $this->fireWebhookEvent($data);
 
+            $webhookLog?->markAsProcessed();
+
             return response()->json(['status' => 'success']);
         } catch (\Exception $e) {
             report($e);
+
+            $webhookLog?->markAsFailed($e->getMessage());
 
             return response()->json(['error' => $e->getMessage()], 403);
         }
@@ -397,5 +437,65 @@ class WebhookController extends Controller
         $customer->save();
 
         return $customer;
+    }
+
+    /**
+     * Log an incoming webhook for audit and debugging.
+     */
+    protected function logWebhook(Request $request, string $rawPayload, ?string $signature): WebhookLog
+    {
+        $webhookLogModel = config('cashier-nowpayments.model.webhook_log', WebhookLog::class);
+
+        // Try to parse the payload immediately for indexing
+        $payload = json_decode($rawPayload, true) ?? [];
+
+        /** @var WebhookLog $webhookLog */
+        $webhookLog = new $webhookLogModel();
+        $webhookLog->fill([
+            'payload_id' => $payload['id'] ?? $payload['payment_id'] ?? null,
+            'event_type' => $this->detectEventType($payload),
+            'payment_id' => $payload['payment_id'] ?? null,
+            'invoice_id' => $payload['invoice_id'] ?? null,
+            'subscription_id' => $payload['subscription_id'] ?? null,
+            'payout_id' => $payload['id'] ?? $payload['batch_withdrawal_id'] ?? null,
+            'payment_status' => $payload['payment_status'] ?? $payload['status'] ?? null,
+            'signature' => $signature,
+            'signature_valid' => false, // Will be verified later
+            'processed' => false,
+            'payload' => !empty($payload) ? $payload : ['raw' => $rawPayload],
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+        ]);
+        $webhookLog->save();
+
+        return $webhookLog;
+    }
+
+    /**
+     * Detect the event type from the webhook payload.
+     */
+    protected function detectEventType(array $data): ?string
+    {
+        if (isset($data['payment_id'])) {
+            return 'payment';
+        }
+
+        if (isset($data['subscription_id']) || isset($data['plan_id'])) {
+            return 'subscription';
+        }
+
+        if (isset($data['invoice_id'])) {
+            return 'invoice';
+        }
+
+        if (isset($data['currency']) && isset($data['address']) && !isset($data['payment_id'])) {
+            return 'payout';
+        }
+
+        if (isset($data['parent_payment_id'])) {
+            return 'redeposit';
+        }
+
+        return null;
     }
 }
