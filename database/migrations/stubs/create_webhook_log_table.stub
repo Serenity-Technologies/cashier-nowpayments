@@ -1,0 +1,46 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    /**
+     * Run the migrations.
+     */
+    public function up(): void
+    {
+        $prefix = config('cashier-nowpayments.prefix', 'cashier_nowpayments_');
+
+        Schema::create("{$prefix}webhook_logs", function (Blueprint $table) {
+            $table->ulid('id')->primary();
+            $table->string('payload_id')->nullable()->index();
+            $table->string('event_type')->nullable()->index();
+            $table->string('payment_id')->nullable()->index();
+            $table->string('invoice_id')->nullable()->index();
+            $table->string('subscription_id')->nullable()->index();
+            $table->string('payout_id')->nullable()->index();
+            $table->string('payment_status')->nullable();
+            $table->string('signature')->nullable();
+            $table->boolean('signature_valid')->default(false);
+            $table->boolean('processed')->default(false);
+            $table->string('processing_error')->nullable();
+            $table->json('payload');
+            $table->string('ip_address')->nullable();
+            $table->string('user_agent')->nullable();
+            $table->timestamps();
+
+            $table->index(['created_at' => 'desc']);
+        });
+    }
+
+    /**
+     * Reverse the migrations.
+     */
+    public function down(): void
+    {
+        $prefix = config('cashier-nowpayments.prefix', 'cashier_nowpayments_');
+        Schema::dropIfExists("{$prefix}webhook_logs");
+    }
+};
