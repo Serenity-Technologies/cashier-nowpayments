@@ -416,7 +416,7 @@ function displayCurrencies(currencies) {
 
         div.innerHTML = `
             <img src="${currency.logo}" alt="${currency.name}" class="w-8 h-8 rounded-full" loading="lazy"
-                 onerror="this.src='https://assets.coingecko.com/coins/images/1/small/bitcoin.png'">
+                 onerror="this.src='https://nowpayments.io/images/coins/${currency.code}.svg'">
             <div class="flex-1 min-w-0">
                 <div class="font-semibold text-sm text-gray-900 flex items-center flex-wrap gap-1">
                     ${escapeHtml(currency.name)}
@@ -430,25 +430,30 @@ function displayCurrencies(currencies) {
                 </div>
             </div>
         `;
-        div.onclick = () => selectCurrency(currency.code);
+        div.onclick = (e) => selectCurrency(currency.code, e);
         container.appendChild(div);
     });
 }
 
 // Escape HTML to prevent XSS
 function escapeHtml(text) {
+    if (typeof text !== 'string') return String(text || '');
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
 }
 
 // Select payment currency
-async function selectCurrency(currency) {
-    selectedCurrency = currency;
+async function selectCurrency(currencyCode, event) {
+    if (event) event.stopPropagation();
+    selectedCurrency = currencyCode;
 
     // Update UI
     document.querySelectorAll('.currency-option').forEach(el => el.classList.remove('selected'));
-    event.target.closest('.currency-option').classList.add('selected');
+    if (event && event.target) {
+        const closest = event.target.closest('.currency-option');
+        if (closest) closest.classList.add('selected');
+    }
 
     // Get estimate
     try {
@@ -461,7 +466,7 @@ async function selectCurrency(currency) {
             body: JSON.stringify({
                 amount: CheckoutConfig.amount,
                 from_currency: CheckoutConfig.currency,
-                to_currency: currency
+                to_currency: currencyCode
             })
         });
 
@@ -469,7 +474,7 @@ async function selectCurrency(currency) {
 
         if (data.success) {
             document.getElementById('estimateDisplay').classList.remove('hidden');
-            document.getElementById('estimateAmount').textContent = `${data.estimated_amount} ${currency.toUpperCase()}`;
+            document.getElementById('estimateAmount').textContent = `${data.estimated_amount} ${currencyCode.toUpperCase()}`;
             document.getElementById('payButton').disabled = false;
         } else {
             showError(data.message);
