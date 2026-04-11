@@ -7,6 +7,7 @@ namespace SerenityTechnologies\CashierNowPayments;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 use SerenityTechnologies\CashierNowPayments\Console\DownloadCurrencyImagesCommand;
+use SerenityTechnologies\CashierNowPayments\Console\ExtractCoinImagesCommand;
 use SerenityTechnologies\CashierNowPayments\Console\InstallMigrationsCommand;
 use SerenityTechnologies\CashierNowPayments\Console\PruneWebhookLogsCommand;
 use SerenityTechnologies\CashierNowPayments\Http\Controllers\WebhookController;
