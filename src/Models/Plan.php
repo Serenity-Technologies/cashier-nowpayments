@@ -9,12 +9,47 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
+/**
+ * Represents a subscription plan from NOWPayments.
+ *
+ * Plans define recurring billing configurations including amount,
+ * currency, and billing interval. They can be synced from the
+ * NOWPayments API.
+ *
+ * @property string $id The ULID primary key
+ * @property string|null $nowpayments_plan_id The NOWPayments plan identifier
+ * @property string $name The plan name
+ * @property string|null $description The plan description
+ * @property string $amount The plan price amount
+ * @property string|null $currency The plan currency
+ * @property int|null $interval_days The billing interval in days
+ * @property string $status The plan status (e.g., active, inactive)
+ * @property string|null $success_url Redirect URL after successful subscription creation
+ * @property string|null $cancel_url Redirect URL after cancelled subscription creation
+ * @property array|null $metadata Additional JSON metadata
+ * @property \Carbon\Carbon $created_at Creation timestamp
+ * @property \Carbon\Carbon $updated_at Last update timestamp
+ *
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, SubscriptionItem> $subscriptionItems
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, Subscription> $subscriptions
+ *
+ * @mixin \Illuminate\Database\Eloquent\Builder<self>
+ *
+ * @method static \Illuminate\Database\Eloquent\Builder<self> whereId(string $id)
+ * @method static \Illuminate\Database\Eloquent\Builder<self> whereNowPaymentsPlanId(string $nowpaymentsPlanId)
+ * @method static \Illuminate\Database\Eloquent\Builder<self> whereStatus(string $status)
+ * @method static \Illuminate\Database\Eloquent\Builder<self> active()
+ *
+ * @package SerenityTechnologies\CashierNowPayments\Models
+ */
 class Plan extends Model
 {
     use HasFactory, HasUlids;
 
     /**
      * Get the table name for the model.
+     *
+     * @return string The fully qualified table name with configured prefix
      */
     public function getTable(): string
     {
@@ -41,6 +76,8 @@ class Plan extends Model
 
     /**
      * Get the subscription items for this plan.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\HasMany<SubscriptionItem, $this>
      */
     public function subscriptionItems(): HasMany
     {
@@ -49,6 +86,8 @@ class Plan extends Model
 
     /**
      * Get the subscriptions for this plan.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\HasMany<Subscription, $this>
      */
     public function subscriptions(): HasMany
     {
@@ -57,6 +96,9 @@ class Plan extends Model
 
     /**
      * Scope a query to only include active plans.
+     *
+     * @param \Illuminate\Database\Eloquent\Builder<self> $query
+     * @return void
      */
     public function scopeActive($query): void
     {
@@ -65,6 +107,8 @@ class Plan extends Model
 
     /**
      * Determine if the plan is active.
+     *
+     * @return bool True if status is 'active'
      */
     public function isActive(): bool
     {
@@ -73,6 +117,11 @@ class Plan extends Model
 
     /**
      * Sync the plan details from NOWPayments API.
+     *
+     * Fetches the latest plan details from NOWPayments and updates
+     * the local record.
+     *
+     * @return $this
      */
     public function syncFromApi(): self
     {
@@ -97,6 +146,8 @@ class Plan extends Model
 
     /**
      * Get the subscription item model class.
+     *
+     * @return class-string<SubscriptionItem>
      */
     protected function getSubscriptionItemModel(): string
     {
@@ -105,6 +156,8 @@ class Plan extends Model
 
     /**
      * Get the subscription model class.
+     *
+     * @return class-string<Subscription>
      */
     protected function getSubscriptionModel(): string
     {

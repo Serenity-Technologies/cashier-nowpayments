@@ -13,6 +13,58 @@ use SerenityTechnologies\CashierNowPayments\Events\PaymentRefunded;
 use SerenityTechnologies\CashierNowPayments\Events\PaymentStatusSynced;
 use SerenityTechnologies\NowPayments\Facades\NowPayments;
 
+/**
+ * Represents a payment processed through NOWPayments.
+ *
+ * Payments track the full lifecycle of a transaction including creation,
+ * confirmation, completion, and refunds. They can be associated with a
+ * subscription for recurring billing.
+ *
+ * @property string $id The ULID primary key
+ * @property string $customer_id The owning customer's ULID
+ * @property string $billable_type The owning billable model type
+ * @property int|string $billable_id The owning billable model ID
+ * @property string|null $subscription_id The associated subscription's ULID
+ * @property string|null $nowpayments_payment_id The NOWPayments payment identifier
+ * @property string|null $nowpayments_purchase_id The NOWPayments purchase identifier
+ * @property string|null $parent_payment_id The parent payment's ULID for split payments
+ * @property string|null $type The payment type
+ * @property string $status The payment status (e.g., waiting, confirming, finished, refunded, failed)
+ * @property string|null $currency The payment currency
+ * @property string $amount The total payment amount
+ * @property string $amount_paid The amount actually paid
+ * @property string|null $pay_currency The cryptocurrency used for payment
+ * @property string|null $pay_amount The amount in pay currency
+ * @property string|null $pay_address The destination address for payment
+ * @property string|null $order_id The order identifier
+ * @property string|null $order_description Description of the order
+ * @property string|null $payin_hash The payin transaction hash
+ * @property string|null $payout_hash The payout transaction hash
+ * @property array|null $fee Fee information
+ * @property array|null $metadata Additional JSON metadata
+ * @property \Carbon\Carbon|null $paid_at Timestamp when the payment was completed
+ * @property \Carbon\Carbon|null $refunded_at Timestamp when the payment was refunded
+ * @property \Carbon\Carbon $created_at Creation timestamp
+ * @property \Carbon\Carbon $updated_at Last update timestamp
+ *
+ * @property-read Customer $customer
+ * @property-read Subscription|null $subscription
+ *
+ * @mixin \Illuminate\Database\Eloquent\Builder<self>
+ *
+ * @method static \Illuminate\Database\Eloquent\Builder<self> whereId(string $id)
+ * @method static \Illuminate\Database\Eloquent\Builder<self> whereCustomerId(string $customerId)
+ * @method static \Illuminate\Database\Eloquent\Builder<self> whereSubscriptionId(string $subscriptionId)
+ * @method static \Illuminate\Database\Eloquent\Builder<self> whereNowPaymentsPaymentId(string $nowpaymentsPaymentId)
+ * @method static \Illuminate\Database\Eloquent\Builder<self> whereStatus(string $status)
+ * @method static \Illuminate\Database\Eloquent\Builder<self> whereOrderId(string $orderId)
+ * @method static \Illuminate\Database\Eloquent\Builder<self> successful()
+ * @method static \Illuminate\Database\Eloquent\Builder<self> pending()
+ * @method static \Illuminate\Database\Eloquent\Builder<self> failed()
+ * @method static \Illuminate\Database\Eloquent\Builder<self> forSubscription(string $subscriptionId)
+ *
+ * @package SerenityTechnologies\CashierNowPayments\Models
+ */
 class Payment extends Model
 {
     use HasFactory, HasUlids;
@@ -20,6 +72,8 @@ class Payment extends Model
 
     /**
      * Get the table name for the model.
+     *
+     * @return string The fully qualified table name with configured prefix
      */
     public function getTable(): string
     {
@@ -48,6 +102,8 @@ class Payment extends Model
 
     /**
      * Get the customer that owns the payment.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo<Customer, $this>
      */
     public function customer(): BelongsTo
     {
@@ -56,6 +112,8 @@ class Payment extends Model
 
     /**
      * Get the owning billable model.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\MorphTo<Model, $this>
      */
     public function billable(): MorphTo
     {
@@ -64,6 +122,8 @@ class Payment extends Model
 
     /**
      * Get the subscription that owns the payment.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo<Subscription, $this>
      */
     public function subscription(): BelongsTo
     {
@@ -72,6 +132,9 @@ class Payment extends Model
 
     /**
      * Scope a query to only include successful payments.
+     *
+     * @param \Illuminate\Database\Eloquent\Builder<self> $query
+     * @return void
      */
     public function scopeSuccessful($query): void
     {
@@ -80,6 +143,9 @@ class Payment extends Model
 
     /**
      * Scope a query to only include pending payments.
+     *
+     * @param \Illuminate\Database\Eloquent\Builder<self> $query
+     * @return void
      */
     public function scopePending($query): void
     {
@@ -88,6 +154,9 @@ class Payment extends Model
 
     /**
      * Scope a query to only include failed payments.
+     *
+     * @param \Illuminate\Database\Eloquent\Builder<self> $query
+     * @return void
      */
     public function scopeFailed($query): void
     {
@@ -96,6 +165,10 @@ class Payment extends Model
 
     /**
      * Scope a query to only include payments for a subscription.
+     *
+     * @param \Illuminate\Database\Eloquent\Builder<self> $query
+     * @param string $subscriptionId The subscription ULID to filter by
+     * @return void
      */
     public function scopeForSubscription($query, string $subscriptionId): void
     {
@@ -104,6 +177,8 @@ class Payment extends Model
 
     /**
      * Determine if the payment is successful.
+     *
+     * @return bool True if status is 'finished'
      */
     public function isSuccessful(): bool
     {
@@ -112,6 +187,8 @@ class Payment extends Model
 
     /**
      * Determine if the payment is pending.
+     *
+     * @return bool True if status is waiting, confirming, confirmed, sending, or partially_paid
      */
     public function isPending(): bool
     {
@@ -120,6 +197,8 @@ class Payment extends Model
 
     /**
      * Determine if the payment has failed.
+     *
+     * @return bool True if status is 'failed' or 'expired'
      */
     public function isFailed(): bool
     {
@@ -128,6 +207,8 @@ class Payment extends Model
 
     /**
      * Determine if the payment has been refunded.
+     *
+     * @return bool True if status is 'refunded' or refunded_at is set
      */
     public function isRefunded(): bool
     {
@@ -136,6 +217,11 @@ class Payment extends Model
 
     /**
      * Sync the payment status with NOWPayments API.
+     *
+     * Fetches the latest payment status from NOWPayments and updates
+     * the local record. Dispatches a PaymentStatusSynced event.
+     *
+     * @return $this
      */
     public function syncStatus(): self
     {
@@ -172,7 +258,8 @@ class Payment extends Model
      * to update the local record.
      *
      * @param string|null $reason Reason for the refund
-     * @throws \InvalidArgumentException If payment is not in 'finished' status
+     * @return $this
+     * @throws \InvalidArgumentException If payment is not in 'finished' status or already refunded
      */
     public function refund(?string $reason = null): self
     {
@@ -204,6 +291,8 @@ class Payment extends Model
 
     /**
      * Get the customer model class.
+     *
+     * @return class-string<Customer>
      */
     protected function getCustomerModel(): string
     {
@@ -212,6 +301,8 @@ class Payment extends Model
 
     /**
      * Get the subscription model class.
+     *
+     * @return class-string<Subscription>
      */
     protected function getSubscriptionModel(): string
     {

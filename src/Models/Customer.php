@@ -13,6 +13,42 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Collection;
 use SerenityTechnologies\CashierNowPayments\Events\CreditExpired;
 
+/**
+ * Represents a customer synced from the NOWPayments platform.
+ *
+ * A Customer is linked to a billable model (e.g., User) via a polymorphic
+ * relationship. It tracks the NOWPayments customer ID, trial status, and
+ * owns subscriptions, payments, invoices, payouts, and credits.
+ *
+ * @property string $id The ULID primary key
+ * @property string $billable_type The owning billable model type
+ * @property int|string $billable_id The owning billable model ID
+ * @property string|null $nowpayments_customer_id The NOWPayments customer identifier
+ * @property string|null $email The customer email address
+ * @property string|null $name The customer name
+ * @property array|null $metadata Additional JSON metadata
+ * @property \Carbon\Carbon|null $trial_ends_at When the trial period ends
+ * @property \Carbon\Carbon|null $deleted_at Soft delete timestamp
+ * @property \Carbon\Carbon $created_at Creation timestamp
+ * @property \Carbon\Carbon $updated_at Last update timestamp
+ *
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, Subscription> $subscriptions
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, Payment> $payments
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, Invoice> $invoices
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, Payout> $payouts
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, Credit> $credits
+ *
+ * @mixin \Illuminate\Database\Eloquent\Builder<self>
+ *
+ * @method static \Illuminate\Database\Eloquent\Builder<self> whereId(string $id)
+ * @method static \Illuminate\Database\Eloquent\Builder<self> whereNowPaymentsCustomerId(string $nowpaymentsCustomerId)
+ * @method static \Illuminate\Database\Eloquent\Builder<self> whereBillable(string $billableType, int|string $billableId)
+ * @method static \Illuminate\Database\Eloquent\Builder<self> whereEmail(string $email)
+ * @method static \Illuminate\Database\Eloquent\Builder<self> whereTrialEndsAt(\Carbon\Carbon $date)
+ * @method static \Illuminate\Database\Eloquent\Builder<self> whereNull(string $column)
+ *
+ * @package SerenityTechnologies\CashierNowPayments\Models
+ */
 class Customer extends Model
 {
     use HasFactory;
@@ -20,6 +56,8 @@ class Customer extends Model
 
     /**
      * Get the table name for the model.
+     *
+     * @return string The fully qualified table name with configured prefix
      */
     public function getTable(): string
     {
@@ -46,6 +84,8 @@ class Customer extends Model
 
     /**
      * Get the owning billable model.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\MorphTo<Model, $this>
      */
     public function billable(): MorphTo
     {
@@ -54,6 +94,8 @@ class Customer extends Model
 
     /**
      * Get the subscriptions for the customer.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\HasMany<Subscription, $this>
      */
     public function subscriptions(): HasMany
     {
@@ -62,6 +104,8 @@ class Customer extends Model
 
     /**
      * Get the payments for the customer.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\HasMany<Payment, $this>
      */
     public function payments(): HasMany
     {
@@ -70,6 +114,8 @@ class Customer extends Model
 
     /**
      * Get the invoices for the customer.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\HasMany<Invoice, $this>
      */
     public function invoices(): HasMany
     {
@@ -78,6 +124,8 @@ class Customer extends Model
 
     /**
      * Get the payouts for the customer.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\HasMany<Payout, $this>
      */
     public function payouts(): HasMany
     {
@@ -86,6 +134,8 @@ class Customer extends Model
 
     /**
      * Get the credits for the customer.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\HasMany<Credit, $this>
      */
     public function credits(): HasMany
     {
@@ -94,6 +144,8 @@ class Customer extends Model
 
     /**
      * Get the total credit balance for the customer.
+     *
+     * @return string The sum of all unapplied, non-expired credit amounts
      */
     public function creditBalance(): string
     {
@@ -111,6 +163,9 @@ class Customer extends Model
      *
      * For partially consumed credits, returns the original issued amount
      * from metadata. For fully intact credits, returns the current amount.
+     *
+     * @param \Illuminate\Database\Eloquent\Model $credit The credit model instance
+     * @return string The original credit amount as a formatted string
      */
     public function getOriginalAmountForCredit(Model $credit): string
     {
@@ -206,6 +261,8 @@ class Customer extends Model
     /**
      * Expire credits past their expiration date.
      *
+     * Dispatches a CreditExpired event if any credits were expired.
+     *
      * @return int Number of credits expired
      */
     public function expireCredits(): int
@@ -233,6 +290,8 @@ class Customer extends Model
 
     /**
      * Determine if the customer is on trial.
+     *
+     * @return bool True if the trial period has not yet ended
      */
     public function onTrial(): bool
     {
@@ -248,6 +307,10 @@ class Customer extends Model
      *
      * Checks against all known NOWPayments subscription status values
      * to avoid false negatives from API status variations.
+     *
+     * @param string $type The subscription type to check (default: 'default')
+     * @param string|null $planId Optional plan ID to filter by
+     * @return bool True if the customer has an active subscription of the given type
      */
     public function subscribed(string $type = 'default', ?string $planId = null): bool
     {
@@ -273,6 +336,9 @@ class Customer extends Model
 
     /**
      * Get a subscription by type.
+     *
+     * @param string $type The subscription type to retrieve (default: 'default')
+     * @return Subscription|null The subscription instance or null if not found
      */
     public function subscription(string $type = 'default'): ?Subscription
     {
@@ -283,6 +349,8 @@ class Customer extends Model
 
     /**
      * Determine if the customer has any incomplete payments.
+     *
+     * @return bool True if there are payments in waiting, confirming, or partially_paid status
      */
     public function hasIncompletePayment(): bool
     {
@@ -293,6 +361,8 @@ class Customer extends Model
 
     /**
      * Get the subscription model class.
+     *
+     * @return class-string<Subscription>
      */
     protected function getSubscriptionModel(): string
     {
@@ -301,6 +371,8 @@ class Customer extends Model
 
     /**
      * Get the payment model class.
+     *
+     * @return class-string<Payment>
      */
     protected function getPaymentModel(): string
     {
@@ -309,6 +381,8 @@ class Customer extends Model
 
     /**
      * Get the invoice model class.
+     *
+     * @return class-string<Invoice>
      */
     protected function getInvoiceModel(): string
     {
@@ -317,6 +391,8 @@ class Customer extends Model
 
     /**
      * Get the payout model class.
+     *
+     * @return class-string<Payout>
      */
     protected function getPayoutModel(): string
     {
@@ -325,6 +401,8 @@ class Customer extends Model
 
     /**
      * Get the credit model class.
+     *
+     * @return class-string<Credit>
      */
     protected function getCreditModel(): string
     {

@@ -16,6 +16,51 @@ use SerenityTechnologies\CashierNowPayments\Events\SubscriptionUpdated;
 use SerenityTechnologies\NowPayments\DTOs\Request\SubscriptionRequest;
 use SerenityTechnologies\NowPayments\Facades\NowPayments;
 
+/**
+ * Represents a recurring subscription managed through NOWPayments.
+ *
+ * Subscriptions track the lifecycle of a recurring billing arrangement
+ * including trial periods, active billing, cancellation, and expiration.
+ * They can contain multiple subscription items for multi-plan subscriptions.
+ *
+ * @property string $id The ULID primary key
+ * @property string $customer_id The owning customer's ULID
+ * @property string $type The subscription type (e.g., 'default')
+ * @property string|null $nowpayments_plan_id The NOWPayments plan identifier
+ * @property string|null $nowpayments_subscription_id The NOWPayments subscription identifier
+ * @property string $status The subscription status (e.g., active, paid, waiting_pay, cancelled, expired)
+ * @property string|null $currency The subscription currency
+ * @property string $total_price The total subscription price
+ * @property int $quantity The subscription quantity
+ * @property \Carbon\Carbon|null $trial_ends_at When the trial period ends
+ * @property \Carbon\Carbon|null $ends_at When the subscription ends (null if active)
+ * @property \Carbon\Carbon|null $renews_at When the subscription next renews
+ * @property \Carbon\Carbon|null $cancels_at When the subscription was cancelled
+ * @property array|null $metadata Additional JSON metadata
+ * @property \Carbon\Carbon|null $deleted_at Soft delete timestamp
+ * @property \Carbon\Carbon $created_at Creation timestamp
+ * @property \Carbon\Carbon $updated_at Last update timestamp
+ *
+ * @property-read Customer $customer
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, SubscriptionItem> $items
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, Payment> $payments
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, Credit> $credits
+ *
+ * @mixin \Illuminate\Database\Eloquent\Builder<self>
+ *
+ * @method static \Illuminate\Database\Eloquent\Builder<self> whereId(string $id)
+ * @method static \Illuminate\Database\Eloquent\Builder<self> whereCustomerId(string $customerId)
+ * @method static \Illuminate\Database\Eloquent\Builder<self> whereNowPaymentsSubscriptionId(string $nowpaymentsSubscriptionId)
+ * @method static \Illuminate\Database\Eloquent\Builder<self> whereNowPaymentsPlanId(string $nowpaymentsPlanId)
+ * @method static \Illuminate\Database\Eloquent\Builder<self> whereStatus(string $status)
+ * @method static \Illuminate\Database\Eloquent\Builder<self> whereType(string $type)
+ * @method static \Illuminate\Database\Eloquent\Builder<self> active()
+ * @method static \Illuminate\Database\Eloquent\Builder<self> onTrial()
+ * @method static \Illuminate\Database\Eloquent\Builder<self> cancelled()
+ * @method static \Illuminate\Database\Eloquent\Builder<self> expired()
+ *
+ * @package SerenityTechnologies\CashierNowPayments\Models
+ */
 class Subscription extends Model
 {
     use HasFactory;
@@ -44,6 +89,8 @@ class Subscription extends Model
 
     /**
      * Get the table name for the model.
+     *
+     * @return string The fully qualified table name with configured prefix
      */
     public function getTable(): string
     {
@@ -53,6 +100,8 @@ class Subscription extends Model
 
     /**
      * Get the customer that owns the subscription.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo<Customer, $this>
      */
     public function customer(): BelongsTo
     {
@@ -61,6 +110,8 @@ class Subscription extends Model
 
     /**
      * Get the subscription items.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\HasMany<SubscriptionItem, $this>
      */
     public function items(): HasMany
     {
@@ -69,6 +120,8 @@ class Subscription extends Model
 
     /**
      * Get the payments for the subscription.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\HasMany<Payment, $this>
      */
     public function payments(): HasMany
     {
@@ -77,6 +130,8 @@ class Subscription extends Model
 
     /**
      * Get the credits associated with this subscription.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\HasMany<Credit, $this>
      */
     public function credits(): HasMany
     {
@@ -85,6 +140,9 @@ class Subscription extends Model
 
     /**
      * Scope a query to only include active subscriptions.
+     *
+     * @param \Illuminate\Database\Eloquent\Builder<self> $query
+     * @return void
      */
     public function scopeActive($query): void
     {
@@ -93,6 +151,9 @@ class Subscription extends Model
 
     /**
      * Scope a query to only include subscriptions on trial.
+     *
+     * @param \Illuminate\Database\Eloquent\Builder<self> $query
+     * @return void
      */
     public function scopeOnTrial($query): void
     {
@@ -102,6 +163,9 @@ class Subscription extends Model
 
     /**
      * Scope a query to only include cancelled subscriptions.
+     *
+     * @param \Illuminate\Database\Eloquent\Builder<self> $query
+     * @return void
      */
     public function scopeCancelled($query): void
     {
@@ -110,6 +174,9 @@ class Subscription extends Model
 
     /**
      * Scope a query to only include expired subscriptions.
+     *
+     * @param \Illuminate\Database\Eloquent\Builder<self> $query
+     * @return void
      */
     public function scopeExpired($query): void
     {
@@ -118,6 +185,8 @@ class Subscription extends Model
 
     /**
      * Determine if the subscription is active.
+     *
+     * @return bool True if ends_at is null
      */
     public function isActive(): bool
     {
@@ -126,6 +195,8 @@ class Subscription extends Model
 
     /**
      * Determine if the subscription is on trial.
+     *
+     * @return bool True if trial_ends_at is set and in the future
      */
     public function isOnTrial(): bool
     {
@@ -138,6 +209,8 @@ class Subscription extends Model
 
     /**
      * Determine if the subscription is cancelled.
+     *
+     * @return bool True if ends_at is set
      */
     public function isCancelled(): bool
     {
@@ -146,6 +219,8 @@ class Subscription extends Model
 
     /**
      * Determine if the subscription is expired.
+     *
+     * @return bool True if status is 'expired'
      */
     public function isExpired(): bool
     {
@@ -154,6 +229,8 @@ class Subscription extends Model
 
     /**
      * Determine if the subscription has incomplete payments.
+     *
+     * @return bool True if there are payments in waiting, confirming, or partially_paid status
      */
     public function hasIncompletePayment(): bool
     {
@@ -165,6 +242,9 @@ class Subscription extends Model
     /**
      * Cancel the subscription at the end of the billing period.
      *
+     * Schedules cancellation and dispatches a SubscriptionCancelled event.
+     *
+     * @return $this
      * @throws \SerenityTechnologies\NowPayments\Exceptions\NowPaymentsException
      */
     public function cancel(): self
@@ -186,6 +266,7 @@ class Subscription extends Model
     /**
      * Cancel the subscription immediately.
      *
+     * @return $this
      * @throws \SerenityTechnologies\NowPayments\Exceptions\NowPaymentsException
      */
     public function cancelNow(): self
@@ -207,6 +288,7 @@ class Subscription extends Model
     /**
      * Resume a cancelled subscription.
      *
+     * @return $this
      * @throws \RuntimeException If the subscription was deleted on NOWPayments
      */
     public function resume(): self
@@ -228,6 +310,9 @@ class Subscription extends Model
      * partial failures. Computes prorated credit based on remaining
      * billing days, updates the local total_price, and records the
      * credit ledger entry atomically.
+     *
+     * @param string $newPlanId The NOWPayments plan ID to swap to
+     * @return $this
      */
     public function swap(string $newPlanId): self
     {
@@ -299,6 +384,8 @@ class Subscription extends Model
      * Formula: (remaining_days / total_billing_days) * total_price
      *
      * If no billing cycle data is available, returns 0 (no credit).
+     *
+     * @return float The prorated credit amount
      */
     protected function calculateProratedCredit(): float
     {
@@ -336,6 +423,8 @@ class Subscription extends Model
      *
      * Uses the locally stored interval_days to avoid making external API calls
      * inside database transactions (e.g., during swap proration calculations).
+     *
+     * @return int The billing interval in days (defaults to 30)
      */
     protected function getBillingIntervalDays(): int
     {
@@ -354,6 +443,7 @@ class Subscription extends Model
      * @param float $proratedAmount The prorated remaining value to credit
      * @param float $oldPrice The full price of the old plan
      * @param float $newPrice The full price of the new plan
+     * @return void
      */
     protected function recordSwapCredit(
         string $oldPlanId,
@@ -407,6 +497,9 @@ class Subscription extends Model
 
     /**
      * Increment the quantity of the subscription.
+     *
+     * @param int $count The number of units to increment (default: 1)
+     * @return $this
      */
     public function incrementQuantity(int $count = 1): self
     {
@@ -417,6 +510,9 @@ class Subscription extends Model
 
     /**
      * Decrement the quantity of the subscription.
+     *
+     * @param int $count The number of units to decrement (default: 1)
+     * @return $this
      */
     public function decrementQuantity(int $count = 1): self
     {
@@ -431,6 +527,10 @@ class Subscription extends Model
      * Note: This updates the local record only. NOWPayments subscriptions
      * do not support quantity adjustments via API. If you need to change
      * the billed amount, use swap() to change to a different plan.
+     *
+     * @param int $quantity The new quantity
+     * @return $this
+     * @throws \InvalidArgumentException If quantity is less than 1
      */
     public function updateQuantity(int $quantity): self
     {
@@ -446,6 +546,8 @@ class Subscription extends Model
 
     /**
      * Get the customer model class.
+     *
+     * @return class-string<Customer>
      */
     protected function getCustomerModel(): string
     {
@@ -454,6 +556,8 @@ class Subscription extends Model
 
     /**
      * Get the subscription item model class.
+     *
+     * @return class-string<SubscriptionItem>
      */
     protected function getSubscriptionItemModel(): string
     {
@@ -462,6 +566,8 @@ class Subscription extends Model
 
     /**
      * Get the payment model class.
+     *
+     * @return class-string<Payment>
      */
     protected function getPaymentModel(): string
     {
@@ -470,6 +576,8 @@ class Subscription extends Model
 
     /**
      * Get the credit model class.
+     *
+     * @return class-string<Credit>
      */
     protected function getCreditModel(): string
     {

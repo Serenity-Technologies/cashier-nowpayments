@@ -12,6 +12,45 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Http\RedirectResponse;
 
+/**
+ * Represents an invoice generated via NOWPayments.
+ *
+ * Invoices are one-time payment requests that can be sent to customers.
+ * They track payment URLs, status, and can have multiple associated payments.
+ *
+ * @property string $id The ULID primary key
+ * @property string $customer_id The owning customer's ULID
+ * @property string $billable_type The owning billable model type
+ * @property int|string $billable_id The owning billable model ID
+ * @property string|null $nowpayments_invoice_id The NOWPayments invoice identifier
+ * @property string $status The invoice status (e.g., active, paid, expired, finished)
+ * @property string|null $currency The invoice currency
+ * @property string $amount The total invoice amount
+ * @property string $amount_paid The amount already paid
+ * @property string|null $order_id The order identifier
+ * @property string|null $order_description Description of the order
+ * @property string|null $invoice_url URL to the invoice payment page
+ * @property string|null $success_url Redirect URL after successful payment
+ * @property string|null $cancel_url Redirect URL after cancelled payment
+ * @property array|null $metadata Additional JSON metadata
+ * @property \Carbon\Carbon|null $paid_at Timestamp when the invoice was paid
+ * @property \Carbon\Carbon|null $expires_at Timestamp when the invoice expires
+ * @property \Carbon\Carbon $created_at Creation timestamp
+ * @property \Carbon\Carbon $updated_at Last update timestamp
+ *
+ * @property-read Customer $customer
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, Payment> $payments
+ *
+ * @mixin \Illuminate\Database\Eloquent\Builder<self>
+ *
+ * @method static \Illuminate\Database\Eloquent\Builder<self> whereId(string $id)
+ * @method static \Illuminate\Database\Eloquent\Builder<self> whereCustomerId(string $customerId)
+ * @method static \Illuminate\Database\Eloquent\Builder<self> whereNowPaymentsInvoiceId(string $nowpaymentsInvoiceId)
+ * @method static \Illuminate\Database\Eloquent\Builder<self> whereStatus(string $status)
+ * @method static \Illuminate\Database\Eloquent\Builder<self> whereOrderId(string $orderId)
+ *
+ * @package SerenityTechnologies\CashierNowPayments\Models
+ */
 class Invoice extends Model
 {
     use HasFactory, HasUlids;
@@ -36,6 +75,8 @@ class Invoice extends Model
 
     /**
      * Get the table name for the model.
+     *
+     * @return string The fully qualified table name with configured prefix
      */
     public function getTable(): string
     {
@@ -45,6 +86,8 @@ class Invoice extends Model
 
     /**
      * Get the customer that owns the invoice.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo<Customer, $this>
      */
     public function customer(): BelongsTo
     {
@@ -53,6 +96,8 @@ class Invoice extends Model
 
     /**
      * Get the owning billable model.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\MorphTo<Model, $this>
      */
     public function billable(): MorphTo
     {
@@ -61,6 +106,8 @@ class Invoice extends Model
 
     /**
      * Get the payments for the invoice.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\HasMany<Payment, $this>
      */
     public function payments(): HasMany
     {
@@ -69,6 +116,8 @@ class Invoice extends Model
 
     /**
      * Determine if the invoice is paid.
+     *
+     * @return bool True if status is 'paid' or 'finished'
      */
     public function isPaid(): bool
     {
@@ -77,6 +126,8 @@ class Invoice extends Model
 
     /**
      * Determine if the invoice is active.
+     *
+     * @return bool True if status is 'active'
      */
     public function isActive(): bool
     {
@@ -85,6 +136,8 @@ class Invoice extends Model
 
     /**
      * Determine if the invoice is expired.
+     *
+     * @return bool True if expires_at is in the past or status is 'expired'
      */
     public function isExpired(): bool
     {
@@ -97,6 +150,8 @@ class Invoice extends Model
 
     /**
      * Redirect to the invoice payment page.
+     *
+     * @return \Illuminate\Http\RedirectResponse Redirect response to the invoice URL
      */
     public function redirect(): RedirectResponse
     {
@@ -105,6 +160,8 @@ class Invoice extends Model
 
     /**
      * Get the customer model class.
+     *
+     * @return class-string<Customer>
      */
     protected function getCustomerModel(): string
     {
@@ -113,6 +170,8 @@ class Invoice extends Model
 
     /**
      * Get the payment model class.
+     *
+     * @return class-string<Payment>
      */
     protected function getPaymentModel(): string
     {
