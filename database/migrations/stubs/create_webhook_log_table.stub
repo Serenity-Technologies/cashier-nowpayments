@@ -4,31 +4,56 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
+/**
+ * Create the webhook_logs table migration.
+ *
+ * Stores incoming webhook events from NOWPayments for auditing and debugging.
+ *
+ * @package SerenityTechnologies\CashierNowPayments
+ */
 return new class extends Migration
 {
     /**
      * Run the migrations.
+     *
+     * @return void
      */
     public function up(): void
     {
         $prefix = config('cashier-nowpayments.prefix', 'cashier_nowpayments_');
 
         Schema::create("{$prefix}webhook_logs", function (Blueprint $table) {
+            /** @var string ULID primary key */
             $table->ulid('id')->primary();
+            /** @var string Webhook payload identifier */
             $table->string('payload_id')->nullable()->index();
+            /** @var string Type of the webhook event */
             $table->string('event_type')->nullable()->index();
+            /** @var string Associated payment identifier */
             $table->string('payment_id')->nullable()->index();
+            /** @var string Associated invoice identifier */
             $table->string('invoice_id')->nullable()->index();
+            /** @var string Associated subscription identifier */
             $table->string('subscription_id')->nullable()->index();
+            /** @var string Associated payout identifier */
             $table->string('payout_id')->nullable()->index();
+            /** @var string Payment status from the webhook */
             $table->string('payment_status')->nullable();
+            /** @var string Webhook signature */
             $table->string('signature')->nullable();
+            /** @var bool Whether the signature is valid */
             $table->boolean('signature_valid')->default(false);
+            /** @var bool Whether the webhook was processed */
             $table->boolean('processed')->default(false);
+            /** @var string Error message if processing failed */
             $table->string('processing_error')->nullable();
+            /** @var string Full webhook payload in JSON format */
             $table->json('payload');
+            /** @var string IP address of the webhook sender */
             $table->string('ip_address')->nullable();
+            /** @var string User agent of the webhook sender */
             $table->string('user_agent')->nullable();
+            /** @var string Created and updated timestamps */
             $table->timestamps();
 
             $table->index(['created_at']);
@@ -37,6 +62,8 @@ return new class extends Migration
 
     /**
      * Reverse the migrations.
+     *
+     * @return void
      */
     public function down(): void
     {

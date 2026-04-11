@@ -4,29 +4,58 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
+/**
+ * Create the invoices table migration.
+ *
+ * Stores invoice records for customer payments and billing.
+ *
+ * @package SerenityTechnologies\CashierNowPayments
+ */
 return new class extends Migration
 {
+    /**
+     * Run the migrations.
+     *
+     * @return void
+     */
     public function up(): void
     {
         $prefix = config('cashier-nowpayments.prefix', 'cashier_nowpayments_');
 
         Schema::create($prefix . 'invoices', function (Blueprint $table) use ($prefix) {
+            /** @var string ULID primary key */
             $table->ulid('id')->primary();
+            /** @var string Foreign key to the customer */
             $table->ulid('customer_id')->nullable()->index();
+            /** @var string Polymorphic relation to the billable model */
             $table->ulidMorphs('billable');
+            /** @var string NOWPayments invoice identifier */
             $table->string('nowpayments_invoice_id')->nullable()->unique()->index();
+            /** @var string Invoice status */
             $table->string('status')->index();
+            /** @var string Currency code */
             $table->string('currency');
+            /** @var string Invoice amount */
             $table->decimal('amount', 20, 8);
+            /** @var string Amount paid so far */
             $table->decimal('amount_paid', 20, 8)->default(0);
+            /** @var string Customer order identifier */
             $table->string('order_id')->nullable()->index();
+            /** @var string Description of the order */
             $table->text('order_description')->nullable();
+            /** @var string URL to the invoice page */
             $table->string('invoice_url')->nullable();
+            /** @var string URL to redirect on successful payment */
             $table->string('success_url')->nullable();
+            /** @var string URL to redirect on cancelled payment */
             $table->string('cancel_url')->nullable();
+            /** @var string Additional metadata in JSON format */
             $table->json('metadata')->nullable();
+            /** @var string Timestamp when the invoice was paid */
             $table->timestamp('paid_at')->nullable();
+            /** @var string Timestamp when the invoice expires */
             $table->timestamp('expires_at')->nullable();
+            /** @var string Created and updated timestamps */
             $table->timestamps();
 
             $table->foreign('customer_id')
@@ -36,6 +65,11 @@ return new class extends Migration
         });
     }
 
+    /**
+     * Reverse the migrations.
+     *
+     * @return void
+     */
     public function down(): void
     {
         $prefix = config('cashier-nowpayments.prefix', 'cashier_nowpayments_');

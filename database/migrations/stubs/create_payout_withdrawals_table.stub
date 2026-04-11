@@ -4,28 +4,50 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
+/**
+ * Create the payout_withdrawals table migration.
+ *
+ * Stores individual withdrawal records that belong to a batch payout.
+ *
+ * @package SerenityTechnologies\CashierNowPayments
+ */
 return new class extends Migration
 {
     /**
      * Run the migrations.
+     *
+     * @return void
      */
     public function up(): void
     {
         $prefix = config('cashier-nowpayments.prefix', 'cashier_nowpayments_');
 
         Schema::create($prefix . 'payout_withdrawals', function (Blueprint $table) use ($prefix) {
+            /** @var string ULID primary key */
             $table->ulid('id')->primary();
+            /** @var string Foreign key to the parent payout */
             $table->ulid('payout_id')->index();
+            /** @var string NOWPayments withdrawal identifier */
             $table->string('nowpayments_withdrawal_id')->nullable()->index('cnp_payout_withdrawals_np_withdrawal_id_index');
+            /** @var string Currency code */
             $table->string('currency');
+            /** @var string Withdrawal amount */
             $table->decimal('amount', 20, 8);
+            /** @var string Destination wallet address */
             $table->string('address');
+            /** @var string Additional identifier for certain currencies (e.g., memo/tag) */
             $table->string('extra_id')->nullable();
+            /** @var string Withdrawal status */
             $table->string('status')->index('cnp_payout_withdrawals_status_index');
+            /** @var string Transaction hash */
             $table->string('hash')->nullable();
+            /** @var string Error message if the withdrawal failed */
             $table->text('error')->nullable();
+            /** @var string Timestamp when the withdrawal was processed */
             $table->timestamp('processed_at')->nullable();
+            /** @var string Additional metadata in JSON format */
             $table->json('metadata')->nullable();
+            /** @var string Created and updated timestamps */
             $table->timestamps();
 
             $table->foreign('payout_id')
@@ -39,6 +61,8 @@ return new class extends Migration
 
     /**
      * Reverse the migrations.
+     *
+     * @return void
      */
     public function down(): void
     {

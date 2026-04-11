@@ -4,36 +4,72 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
+/**
+ * Create the payments table migration.
+ *
+ * Stores payment records for customer transactions, including one-time and subscription payments.
+ *
+ * @package SerenityTechnologies\CashierNowPayments
+ */
 return new class extends Migration
 {
+    /**
+     * Run the migrations.
+     *
+     * @return void
+     */
     public function up(): void
     {
         $prefix = config('cashier-nowpayments.prefix', 'cashier_nowpayments_');
 
         Schema::create($prefix . 'payments', function (Blueprint $table) use ($prefix) {
+            /** @var string ULID primary key */
             $table->ulid('id')->primary();
+            /** @var string Foreign key to the customer */
             $table->ulid('customer_id')->nullable()->index();
+            /** @var string Polymorphic relation to the billable model */
             $table->ulidMorphs('billable');
+            /** @var string Foreign key to the subscription */
             $table->ulid('subscription_id')->nullable()->index();
+            /** @var string NOWPayments payment identifier */
             $table->string('nowpayments_payment_id')->nullable()->index();
+            /** @var string NOWPayments purchase identifier */
             $table->string('nowpayments_purchase_id')->unique()->nullable();
+            /** @var string ID of the parent payment (for child payments) */
             $table->string('parent_payment_id')->nullable();
+            /** @var string Payment type (e.g., 'onetime') */
             $table->string('type')->default('onetime')->index();
+            /** @var string Payment status */
             $table->string('status')->index();
+            /** @var string Currency code */
             $table->string('currency');
+            /** @var string Payment amount */
             $table->decimal('amount', 20, 8);
+            /** @var string Amount paid so far */
             $table->decimal('amount_paid', 20, 8)->default(0);
+            /** @var string Cryptocurrency used for payment */
             $table->string('pay_currency')->nullable();
+            /** @var string Amount in the payment currency */
             $table->decimal('pay_amount', 20, 8)->nullable();
+            /** @var string Destination address for the payment */
             $table->string('pay_address')->nullable();
+            /** @var string Customer order identifier */
             $table->string('order_id')->nullable()->index();
+            /** @var string Description of the order */
             $table->text('order_description')->nullable();
+            /** @var string Transaction hash for the incoming payment */
             $table->string('payin_hash')->nullable();
+            /** @var string Transaction hash for the outgoing payout */
             $table->string('payout_hash')->nullable();
+            /** @var string Fee information in JSON format */
             $table->json('fee')->nullable();
+            /** @var string Additional metadata in JSON format */
             $table->json('metadata')->nullable();
+            /** @var string Timestamp when the payment was completed */
             $table->timestamp('paid_at')->nullable();
+            /** @var string Timestamp when the payment was refunded */
             $table->timestamp('refunded_at')->nullable();
+            /** @var string Created and updated timestamps */
             $table->timestamps();
 
             $table->foreign('customer_id')
@@ -50,6 +86,11 @@ return new class extends Migration
         });
     }
 
+    /**
+     * Reverse the migrations.
+     *
+     * @return void
+     */
     public function down(): void
     {
         $prefix = config('cashier-nowpayments.prefix', 'cashier_nowpayments_');

@@ -4,27 +4,48 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
+/**
+ * Create the plans table migration.
+ *
+ * Stores subscription plan definitions with pricing and billing intervals.
+ *
+ * @package SerenityTechnologies\CashierNowPayments
+ */
 return new class extends Migration
 {
     /**
      * Run the migrations.
+     *
+     * @return void
      */
     public function up(): void
     {
         $prefix = config('cashier-nowpayments.prefix', 'cashier_nowpayments_');
 
         Schema::create($prefix . 'plans', function (Blueprint $table) use ($prefix) {
+            /** @var string ULID primary key */
             $table->ulid('id')->primary();
+            /** @var string NOWPayments plan identifier */
             $table->string('nowpayments_plan_id')->unique()->index();
+            /** @var string Plan name */
             $table->string('name');
+            /** @var string Plan description */
             $table->string('description')->nullable();
+            /** @var string Plan amount */
             $table->decimal('amount', 10, 2);
+            /** @var string Currency code */
             $table->string('currency')->default(config('cashier-nowpayments.currency', 'usd'));
+            /** @var string Billing interval in days */
             $table->integer('interval_days')->default(30);
+            /** @var string Plan status (e.g., 'active') */
             $table->string('status')->default('active')->index();
+            /** @var string URL to redirect on successful subscription */
             $table->string('success_url')->nullable();
+            /** @var string URL to redirect on cancelled subscription */
             $table->string('cancel_url')->nullable();
+            /** @var string Additional metadata in JSON format */
             $table->json('metadata')->nullable();
+            /** @var string Created and updated timestamps */
             $table->timestamps();
 
             $table->index(['status', 'currency']);
@@ -33,6 +54,8 @@ return new class extends Migration
 
     /**
      * Reverse the migrations.
+     *
+     * @return void
      */
     public function down(): void
     {
