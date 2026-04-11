@@ -1,6 +1,6 @@
 ---
 name: nowpayments-one-time-payments
-description: Create and manage one-time cryptocurrency payments using the Laravel Cashier NOWPayments package, including direct payments, checkout overlay, guest checkout, and payment status polling.
+description: Create and manage one-time cryptocurrency payments using the Laravel Cashier NOWPayments package, including direct payments, embedded payment widget, checkout overlay, guest checkout, CheckoutService, and payment status polling.
 ---
 
 # NOWPayments One-Time Payments
@@ -9,7 +9,9 @@ description: Create and manage one-time cryptocurrency payments using the Larave
 
 Use this skill when:
 - Creating direct cryptocurrency payments for authenticated or guest users
+- Using the embedded NOWPayments payment widget for zero-maintenance UI
 - Embedding the checkout overlay UI in Blade views
+- Using the CheckoutService for service-oriented payment flows
 - Using the JS modal checkout for SPAs
 - Polling payment status for frontend updates
 - Configuring idempotency to prevent duplicate payments
@@ -29,7 +31,73 @@ class User extends Authenticatable
 
 ## Creating Payments
 
-### Direct Payment (Authenticated User)
+### Option 1: CheckoutService (Recommended)
+
+The `CheckoutService` provides a unified, testable API for all payment scenarios.
+
+```php
+use SerenityTechnologies\CashierNowPayments\Facades\Checkout;
+
+// Simple payment (3 lines)
+$payment = Checkout::createPayment(49.99, 'usd', 'btc');
+$customer = $user->createOrGetCustomer();
+Checkout::completeCheckout($payment, $customer, $user);
+
+// With full validation
+$validation = Checkout::validateAmount(49.99, 'usd', 'btc');
+if (!$validation->isValid()) {
+    throw new Exception($validation->getFirstError());
+}
+
+$estimate = Checkout::getEstimate(49.99, 'usd', 'btc');
+echo $estimate->getFormattedEstimatedAmount(); // "0.00123456 BTC"
+
+$payment = Checkout::createPayment(49.99, 'usd', 'btc', [
+    'description' => 'Premium ebook',
+    'order_id' => 'ORDER-123',
+    'fixed_rate' => true,
+    'fee_paid_by_user' => false,
+]);
+
+Checkout::completeCheckout($payment, $customer, $user);
+```
+
+### Option 2: Embedded Payment Widget (Zero UI Maintenance)
+
+Use NOWPayments' official payment widget in an iframe overlay.
+
+```php
+// Quick redirect
+return redirect()->route('cashier-nowpayments.checkout.embedded', [
+    'amount' => 49.99,
+    'currency' => 'usd',
+    'description' => 'Premium Plan',
+    'success_url' => route('payment.success'),
+    'cancel_url' => route('payment.cancel'),
+]);
+
+// Via Billable trait
+$url = $user->embeddedCheckoutUrl(49.99, 'usd', [
+    'description' => 'Order #12345',
+    'success_url' => route('payment.success'),
+    'cancel_url' => route('cart'),
+]);
+
+return redirect($url);
+```
+
+**Widget displays:** `https://nowpayments.io/embeds/payment-widget?iid={invoice_id}`
+
+**Widget handles:**
+- Currency selection (BTC, ETH, USDT, etc.)
+- Real-time exchange rates
+- QR code generation
+- Payment address display
+- Countdown timer
+- Payment status tracking
+- Success/cancel redirects
+
+### Option 3: Direct Payment (PaymentBuilder)
 
 Use the fluent `PaymentBuilder` via `$user->charge()`:
 
@@ -64,11 +132,38 @@ $payment->pay_currency;  // 'btc'
 | `charge()` | Create on API + persist locally (returns `Payment` model) |
 | `create()` | Create on API only (returns DTO, no persist) |
 
-### Guest Checkout
+## Guest Checkout
 
-Guest payments are handled automatically by the checkout overlay. The `CheckoutController` creates a guest `Customer` record linked by session ID and caches the billable mapping for webhook reconciliation.
+Guest payments are handled automatically by the checkout overlay and embedded widget. The `CheckoutController` creates a guest `Customer` record linked by session ID and caches the billable mapping for webhook reconciliation.
 
-## Checkout Overlay
+### Via CheckoutService
+
+```php
+// Create session (works for guests)
+$session = Checkout::createSession(49.99, 'usd', [
+    'description' => 'Order #123',
+    'success_url' => route('checkout.success'),
+    'cancel_url' => route('checkout.cancel'),
+]);
+
+// Store in session
+session(['checkout_session_id' => $session->getId()]);
+
+// Later, retrieve
+$session = Checkout::getSession(session('checkout_session_id'));
+```
+
+### Via Embedded Widget
+
+```php
+// Automatically creates guest customer
+return redirect()->route('cashier-nowpayments.checkout.embedded', [
+    'amount' => 49.99,
+    'currency' => 'usd',
+]);
+```
+
+## Checkout Overlay (Custom UI)
 
 ### Blade View
 
@@ -110,6 +205,8 @@ php artisan vendor:publish --tag=cashier-nowpayments-assets
 Then use:
 
 ```javascript
+import { CashierCheckout } from './vendor/cashier-nowpayments/cashier-checkout';
+
 CashierCheckout.open({
     amount: 49.99,
     currency: 'usd',
@@ -120,6 +217,59 @@ CashierCheckout.open({
     console.log('Payment:', result.purchase_id);
 }).catch(err => {
     console.log('Cancelled');
+});
+```
+
+### Embedded Checkout Modal
+
+```javascript
+function openEmbeddedCheckout(amount, currency, options = {}) {
+    const params = new URLSearchParams({
+        amount: amount,
+        currency: currency,
+        description: options.description || '',
+        success_url: options.success_url || window.location.origin + '/success',
+        cancel_url: options.cancel_url || window.location.origin + '/cancel',
+    });
+
+    const modal = document.createElement('div');
+    modal.style.cssText = `
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(8px);
+        z-index: 999999; display: flex; align-items: center; justify-content: center;
+    `;
+
+    const container = document.createElement('div');
+    container.style.cssText = `
+        width: 450px; height: 750px; background: white;
+        border-radius: 16px; overflow: hidden; position: relative;
+    `;
+
+    const iframe = document.createElement('iframe');
+    iframe.src = `/cashier-nowpayments/checkout/embedded?${params.toString()}`;
+    iframe.style.cssText = 'width: 100%; height: 100%; border: none;';
+
+    const closeBtn = document.createElement('button');
+    closeBtn.innerHTML = '×';
+    closeBtn.style.cssText = `
+        position: absolute; top: 10px; right: 10px;
+        background: rgba(0, 0, 0, 0.5); color: white; border: none;
+        border-radius: 50%; width: 32px; height: 32px; font-size: 24px; cursor: pointer;
+    `;
+    closeBtn.onclick = () => modal.remove();
+
+    container.appendChild(iframe);
+    container.appendChild(closeBtn);
+    modal.appendChild(container);
+    document.body.appendChild(modal);
+
+    modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+}
+
+// Usage
+openEmbeddedCheckout(49.99, 'usd', {
+    description: 'Premium Plan',
+    success_url: 'https://yoursite.com/success',
 });
 ```
 
@@ -172,6 +322,16 @@ Payment creation uses a SHA-256 idempotency key derived from:
 
 Responses are cached for 5 minutes. Duplicate requests within this window return the cached result.
 
+### CheckoutService Idempotency
+
+The CheckoutService automatically handles idempotency when using sessions:
+
+```php
+$session = Checkout::createSession(49.99, 'usd', [
+    'order_id' => 'ORDER-123',  // Ensures idempotency
+]);
+```
+
 ## Payment Model
 
 ### Key Fields
@@ -215,7 +375,8 @@ $payment->refund('reason'); // Mark as refunded locally (API refund via dashboar
 
 | Method | URI | Middleware | Purpose |
 |--------|-----|------------|---------|
-| `GET` | `/checkout` | `web` | Overlay view |
+| `GET` | `/checkout` | `web` | Custom overlay view |
+| `GET` | `/checkout/embedded` | `web` | Embedded payment widget |
 | `POST` | `/checkout/payment` | `web`, `throttle:30,1` | Create payment |
 | `GET` | `/checkout/currencies` | `web` | List currencies |
 | `POST` | `/checkout/estimate` | `web`, `throttle:60,1` | Get estimate |
@@ -233,10 +394,49 @@ $payment->refund('reason'); // Mark as refunded locally (API refund via dashboar
 ## Configuration
 
 ```env
+# Payment Method
 CASHIER_NOWPAYMENTS_PAYMENT_METHOD=payment       # Default: 'payment' or 'invoice'
+
+# Payment Options
 CASHIER_NOWPAYMENTS_FIXED_RATE=false             # Lock exchange rate
 CASHIER_NOWPAYMENTS_FEE_PAID_BY_USER=false       # Payer covers fee
+
+# Timeout & Caching
 CASHIER_NOWPAYMENTS_PAYMENT_TIMEOUT=900          # Countdown seconds (15 min)
 CASHIER_NOWPAYMENTS_STATUS_CACHE_SECONDS=10      # Remote status cache TTL
 CASHIER_NOWPAYMENTS_SYNC_COOLDOWN=15             # Local sync cooldown
+
+# Authorization
+CASHIER_NOWPAYMENTS_PAYMENT_STATUS_AUTH=true     # Auth-gate status endpoints
 ```
+
+## Embedded Widget vs Custom Checkout
+
+| Feature | Embedded Widget | Custom Checkout |
+|---------|----------------|-----------------|
+| **UI Source** | NOWPayments official | Custom built |
+| **Maintenance** | Zero (NOWPayments maintains) | Full (you maintain) |
+| **Crypto Selection** | Widget handles | Custom UI |
+| **QR Codes** | Widget renders | Client-side qrcode.js |
+| **Payment Flow** | Widget handles | Manual polling |
+| **Redirects** | Automatic | Manual after polling |
+| **Customization** | Limited | Full control |
+| **Fallback** | To regular checkout | N/A |
+| **Load Time** | Depends on CDN | Instant |
+| **Best For** | Quick, reliable | Custom branding |
+
+### When to Use Embedded Widget
+
+✅ Quick integration needed
+✅ Don't want to maintain custom UI
+✅ Want latest features automatically
+✅ Mobile-first experience important
+✅ Reliability is priority
+
+### When to Use Custom Checkout
+
+✅ Need full control over UI/UX
+✅ Custom branding required
+✅ Need offline support
+✅ Want custom payment flows
+✅ Need detailed UI analytics

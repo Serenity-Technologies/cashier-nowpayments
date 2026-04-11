@@ -204,6 +204,30 @@ SubscriptionRenewed::class       // When status changes to 'paid'
 | `SubscriptionExpired` | On webhook with 'expired' status |
 | `SubscriptionRenewed` | On webhook with 'paid' status (after non-paid status) |
 
+## Subscription Payment via Embedded Widget
+
+For subscription payments with a polished UI, use the embedded widget:
+
+```php
+// Create subscription and redirect to embedded widget
+$subscription = $user->newSubscription('premium', $planId)
+    ->withTrialDays(14)
+    ->create();
+
+// Redirect to embedded checkout for subscription payment
+return redirect()->route('cashier-nowpayments.checkout.embedded', [
+    'amount' => $subscription->total_price,
+    'currency' => $subscription->currency,
+    'description' => 'Subscription: ' . $subscription->type,
+    'order_id' => 'SUB-' . $subscription->id,
+    'success_url' => route('subscription.success'),
+    'cancel_url' => route('subscription.cancel'),
+    'metadata' => [
+        'subscription_id' => $subscription->id,
+    ],
+]);
+```
+
 ## Configuration
 
 ```env

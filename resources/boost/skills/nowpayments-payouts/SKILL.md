@@ -172,6 +172,26 @@ When NOWPayments sends payout status updates:
 | `PayoutCreated` | When `send()` or `create()` is called |
 | `PayoutStatusUpdated` | When webhook updates payout status |
 
+## Payout Recipient Payment Widget
+
+When paying out to recipients, you can use the embedded widget for a better UX if the recipient needs to confirm payout details:
+
+```php
+// For recipient-facing payout confirmation
+return redirect()->route('cashier-nowpayments.checkout.embedded', [
+    'amount' => $payout->amount,
+    'currency' => $payout->currency,
+    'description' => 'Payout to ' . $payout->address,
+    'order_id' => 'PAYOUT-' . $payout->id,
+    'success_url' => route('payouts.confirmation'),
+    'cancel_url' => route('payouts.show', $payout),
+    'metadata' => [
+        'payout_id' => $payout->id,
+        'type' => 'payout_confirmation',
+    ],
+]);
+```
+
 ## Configuration
 
 ```env
