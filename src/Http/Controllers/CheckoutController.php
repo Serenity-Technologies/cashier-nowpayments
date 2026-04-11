@@ -63,6 +63,81 @@ class CheckoutController extends Controller
     }
 
     /**
+     * Display the embedded checkout overlay with NOWPayments payment widget.
+     *
+     * This creates an invoice and displays it in an embedded iframe widget.
+     */
+    public function showEmbedded(Request $request): View
+    {
+        $validated = $request->validate([
+            'amount' => 'required|numeric|min:0.01',
+            'currency' => 'required|string',
+            'description' => 'sometimes|string|max:500',
+            'order_id' => 'sometimes|string|max:255',
+            'metadata' => 'sometimes|array',
+            'success_url' => 'sometimes|url',
+            'cancel_url' => 'sometimes|url',
+        ]);
+
+        try {
+            // Create invoice to get widget URL
+            $invoice = $this->withRetry(function () use ($validated) {
+                $invoiceRequest = new InvoiceRequest(
+                    priceAmount: $validated['amount'],
+                    priceCurrency: $validated['currency'],
+                    ipnCallbackUrl: route('cashier-nowpayments.webhook'),
+                    orderId: $validated['order_id'] ?? 'INV-' . Str::ulid()->toString(),
+                    orderDescription: $validated['description'] ?? null,
+                    successUrl: $validated['success_url'] ?? config('app.url'),
+                    cancelUrl: $validated['cancel_url'] ?? config('app.url'),
+                    isFixedRate: config('cashier-nowpayments.fixed_rate', false),
+                );
+
+                return NowPayments::createInvoice($invoiceRequest);
+            });
+
+            // Store invoice locally for both authenticated and guest users
+            $this->persistInvoice($request, $invoice);
+
+            // Build widget URL from invoice URL
+            // NOWPayments widget URL format: https://nowpayments.io/embeds/payment-widget?iid={invoice_id}
+            $widgetUrl = 'https://nowpayments.io/embeds/payment-widget?iid=' . $invoice->id;
+
+            $checkoutData = [
+                'amount' => (float) $validated['amount'],
+                'currency' => $validated['currency'],
+                'description' => $validated['description'] ?? null,
+                'order_id' => $invoice->order_id,
+                'metadata' => $validated['metadata'] ?? [],
+                'success_url' => $validated['success_url'] ?? config('app.url'),
+                'cancel_url' => $validated['cancel_url'] ?? config('app.url'),
+                'widget_url' => $widgetUrl,
+                'invoice_id' => $invoice->id,
+            ];
+
+            return view('cashier-nowpayments::checkout-embedded', compact('checkoutData'));
+        } catch (\Exception $e) {
+            report($e);
+
+            // Fallback to regular checkout if embedded widget fails
+            $checkoutData = [
+                'amount' => (float) $validated['amount'],
+                'currency' => $validated['currency'],
+                'type' => config('cashier-nowpayments.payment_method', 'payment'),
+                'description' => $validated['description'] ?? null,
+                'order_id' => $validated['order_id'] ?? null,
+                'metadata' => $validated['metadata'] ?? [],
+                'success_url' => $validated['success_url'] ?? config('app.url'),
+                'cancel_url' => $validated['cancel_url'] ?? config('app.url'),
+                'pay_currency' => null,
+                'timeout_seconds' => config('cashier-nowpayments.checkout.payment_timeout_seconds', 900),
+            ];
+
+            return view('cashier-nowpayments::checkout', compact('checkoutData'));
+        }
+    }
+
+    /**
      * Create a payment and return payment details.
      */
     public function createPayment(Request $request): JsonResponse
