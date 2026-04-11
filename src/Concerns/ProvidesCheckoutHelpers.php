@@ -5,9 +5,18 @@ declare(strict_types=1);
 namespace SerenityTechnologies\CashierNowPayments\Concerns;
 
 use Illuminate\Support\HtmlString;
+use SerenityTechnologies\CashierNowPayments\Services\CheckoutService;
 
 trait ProvidesCheckoutHelpers
 {
+    /**
+     * Get the checkout service instance.
+     */
+    public function checkout(): CheckoutService
+    {
+        return app(CheckoutService::class);
+    }
+
     /**
      * Generate a checkout button that opens the overlay.
      *
@@ -58,5 +67,25 @@ HTML;
         ], $options));
 
         return route('cashier-nowpayments.checkout') . '?' . $params;
+    }
+
+    /**
+     * Generate an embedded checkout URL with NOWPayments payment widget.
+     *
+     * @param float $amount
+     * @param string $currency
+     * @param array $options
+     * @return string
+     */
+    public function embeddedCheckoutUrl(float $amount, string $currency, array $options = []): string
+    {
+        $params = http_build_query(array_merge([
+            'amount' => $amount,
+            'currency' => $currency,
+            'success_url' => config('app.url'),
+            'cancel_url' => config('app.url'),
+        ], $options));
+
+        return route('cashier-nowpayments.checkout.embedded') . '?' . $params;
     }
 }
