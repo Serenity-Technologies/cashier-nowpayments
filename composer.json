@@ -31,10 +31,7 @@
     "autoload": {
         "psr-4": {
             "SerenityTechnologies\\CashierNowPayments\\": "src/"
-        },
-        "files": [
-            "scripts/extract-coins.php"
-        ]
+        }
     },
     "autoload-dev": {
         "psr-4": {
