@@ -83,7 +83,7 @@ class CheckoutController extends Controller
             // Create invoice to get widget URL
             $invoice = $this->withRetry(function () use ($validated) {
                 $invoiceRequest = new InvoiceRequest(
-                    priceAmount: $validated['amount'],
+                    priceAmount: (float) $validated['amount'],
                     priceCurrency: $validated['currency'],
                     ipnCallbackUrl: route('cashier-nowpayments.webhook'),
                     orderId: $validated['order_id'] ?? 'INV-' . Str::ulid()->toString(),
@@ -378,38 +378,38 @@ class CheckoutController extends Controller
                 'nowpayments.currencies.detailed',
                 now()->addHour(),
                 function () {
-                    // Get available currency codes
-                    $availableResponse = NowPayments::getAvailableCurrencies();
-                    $availableCodes = $availableResponse->currencies ?? [];
+                    // Get full currency details from NOWPayments API
+                    // Returns array of FullCurrencyItemResponse DTOs
+                    $fullResponse = NowPayments::getFullCurrencies();
+                    $allCurrencies = $fullResponse->currencies ?? [];
 
-                    // Get full currency details
-                    try {
-                        $fullResponse = NowPayments::getFullCurrencies();
-                        $fullCurrencies = $fullResponse ?? [];
-                    } catch (\Exception $e) {
-                        $fullCurrencies = [];
-                    }
+                    // Filter to only currencies available for payment
+                    $paymentCurrencies = array_filter($allCurrencies, function ($currency) {
+                        return !empty($currency->availableForPayment);
+                    });
 
-                    // Map available codes to their full details
-                    $popular = ['btc', 'eth', 'usdttrc20', 'usdterc20', 'ltc', 'trx', 'usdc', 'bnbbsc', 'doge', 'xrp', 'sol', 'ada'];
+                    // Map to our format using logoUrl from DTO
 
-                    $currencies = array_map(function ($code) use ($fullCurrencies) {
-                        $fullCurrency = collect($fullCurrencies)->firstWhere('ticker', $code)
-                            ?? collect($fullCurrencies)->firstWhere('network', $code);
+                    $currencies = array_map(function ($currency) {
+                        $baseUrl = 'https://nowpayments.io';
+                        $popular = ['btc', 'eth', 'usdttrc20', 'usdterc20', 'ltc', 'trx', 'usdc', 'bnbbsc', 'doge', 'xrp', 'sol', 'ada'];
+                        $code = strtolower($currency->code ?? '');
+                        $logoUrl = $currency->logoUrl ?? null;
 
                         return [
                             'code' => $code,
-                            'name' => $fullCurrency->name ?? strtoupper($code),
-                            'ticker' => $fullCurrency->ticker ?? strtoupper($code),
-                            'network' => $fullCurrency->network ?? null,
-                            'blockchain' => $fullCurrency->blockchain ?? $fullCurrency->network ?? strtoupper($code),
-                            'logo' => $this->getCurrencyLogoUrl($code),
+                            'name' => $currency->name ?? strtoupper($code),
+                            'ticker' => strtoupper($currency->ticker ?? $code),
+                            'network' => $currency->network ?? null,
+                            'blockchain' => $currency->network ?? strtoupper($code),
+                            'logo' => !empty($logoUrl) ? $baseUrl . $logoUrl : $this->getCurrencyLogoUrl($code),
                             'is_popular' => in_array($code, $popular, true),
-                            'is_fiat' => $fullCurrency->is_fiat ?? false,
+                            'is_fiat' => false,
+                            'precision' => $currency->precision ?? 8,
                         ];
-                    }, $availableCodes);
+                    }, $paymentCurrencies);
 
-                    // Sort: popular first, then alphabetical
+                    // Sort: popular first, then alphabetical by name
                     usort($currencies, function ($a, $b) {
                         if ($a['is_popular'] !== $b['is_popular']) {
                             return $b['is_popular'] <=> $a['is_popular'];
@@ -417,7 +417,7 @@ class CheckoutController extends Controller
                         return $a['name'] <=> $b['name'];
                     });
 
-                    return $currencies;
+                    return array_values($currencies);
                 }
             );
 
@@ -426,9 +426,11 @@ class CheckoutController extends Controller
                 'currencies' => $currencies,
             ]);
         } catch (\Exception $e) {
+            report($e);
+
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to load currencies.',
+                'message' => 'Failed to load currencies: ' . $e->getMessage(),
             ], 500);
         }
     }

@@ -6,6 +6,8 @@ namespace SerenityTechnologies\CashierNowPayments\Console;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Http;
+use SerenityTechnologies\NowPayments\DTOs\Response\FullCurrencyItemResponse;
+use SerenityTechnologies\NowPayments\DTOs\Response\FullCurrencyResponse;
 use SerenityTechnologies\NowPayments\Facades\NowPayments;
 use Symfony\Component\Console\Command\Command as CommandAlias;
 
@@ -17,9 +19,9 @@ class DownloadCurrencyImagesCommand extends Command
     protected $description = 'Download all supported currency coin images from NOWPayments';
 
     /**
-     * Base URL for NOWPayments coin images.
+     * Base URL prefix for NOWPayments (used with logo_url paths).
      */
-    protected const IMAGE_BASE_URL = 'https://nowpayments.io/images/coins';
+    protected const API_BASE_URL = 'https://nowpayments.io';
 
     /**
      * Local storage path for coin images.
@@ -39,11 +41,17 @@ class DownloadCurrencyImagesCommand extends Command
 
     public function handle(): int
     {
-        $this->components->info('Fetching available currencies from NOWPayments...');
+        $this->components->info('Fetching currencies from NOWPayments...');
 
         try {
-            $response = NowPayments::getAvailableCurrencies();
-            $currencies = $response->currencies ?? [];
+            // Use getFullCurrencies() which returns FullCurrencyItemResponse DTOs
+            $fullResponse = NowPayments::getFullCurrencies();
+            $allCurrencies = $fullResponse->currencies ?? [];
+
+            // Filter to only currencies available for payment
+            $currencies = array_filter($allCurrencies, function (FullCurrencyItemResponse $currency) {
+                return !empty($currency->availableForPayment);
+            });
         } catch (\Exception $e) {
             $this->components->error('Failed to fetch currencies: ' . $e->getMessage());
             return CommandAlias::FAILURE;
@@ -60,10 +68,24 @@ class DownloadCurrencyImagesCommand extends Command
         $bar = $this->output->createProgressBar(count($currencies));
         $bar->start();
 
+        /** @var FullCurrencyItemResponse $currency */
         foreach ($currencies as $currency) {
-            $fileName = strtolower($currency) . '.svg';
+            $code = strtolower($currency->code ?? '');
+            $logoUrl = $currency->logoUrl ?? null;
+
+            if (!$logoUrl) {
+                $failed++;
+                $bar->advance();
+                continue;
+            }
+
+            // Build full URL from logo_url path (e.g., "/images/coins/btc.svg")
+            $fullImageUrl = self::API_BASE_URL . $logoUrl;
+
+            // Determine file extension from URL
+            $extension = pathinfo($logoUrl, PATHINFO_EXTENSION) ?: 'svg';
+            $fileName = $code . '.' . $extension;
             $filePath = $imagePath . '/' . $fileName;
-            $imageUrl = self::IMAGE_BASE_URL . '/' . $fileName;
 
             // Skip if exists and not forcing
             if (file_exists($filePath) && !$this->option('force')) {
@@ -74,23 +96,13 @@ class DownloadCurrencyImagesCommand extends Command
 
             // Download image
             try {
-                $response = Http::timeout(10)->get($imageUrl);
+                $response = Http::timeout(10)->get($fullImageUrl);
 
                 if ($response->successful()) {
                     file_put_contents($filePath, $response->body());
                     $downloaded++;
                 } else {
-                    // Try .png fallback
-                    $pngUrl = self::IMAGE_BASE_URL . '/' . strtolower($currency) . '.png';
-                    $pngResponse = Http::timeout(10)->get($pngUrl);
-
-                    if ($pngResponse->successful()) {
-                        $pngPath = $imagePath . '/' . strtolower($currency) . '.png';
-                        file_put_contents($pngPath, $pngResponse->body());
-                        $downloaded++;
-                    } else {
-                        $failed++;
-                    }
+                    $failed++;
                 }
             } catch (\Exception $e) {
                 $failed++;
