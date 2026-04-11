@@ -5,9 +5,19 @@
  * from anywhere in your application.
  *
  * Usage:
- * import { openCheckout } from './cashier-checkout';
+ * import { CashierCheckout } from './cashier-checkout';
  *
- * openCheckout({
+ * // Custom checkout overlay
+ * CashierCheckout.open({
+ *     amount: 100.00,
+ *     currency: 'usd',
+ *     description: 'Premium Plan',
+ *     success_url: 'https://yoursite.com/success',
+ *     cancel_url: 'https://yoursite.com/cancel'
+ * });
+ *
+ * // Embedded payment widget (recommended - zero UI maintenance)
+ * CashierCheckout.openEmbedded({
  *     amount: 100.00,
  *     currency: 'usd',
  *     description: 'Premium Plan',
@@ -18,7 +28,7 @@
 
 class CashierCheckout {
     /**
-     * Open the checkout overlay.
+     * Open the custom checkout overlay.
      *
      * @param {Object} options
      * @param {number} options.amount - Payment amount
@@ -53,6 +63,61 @@ class CashierCheckout {
 
             // Listen for messages from iframe
             const handler = (event) => {
+                if (event.data.type === 'cashier-checkout-complete') {
+                    window.removeEventListener('message', handler);
+                    this.closeModal(modal);
+                    resolve(event.data.payload);
+                } else if (event.data.type === 'cashier-checkout-cancel') {
+                    window.removeEventListener('message', handler);
+                    this.closeModal(modal);
+                    reject(new Error('Checkout cancelled'));
+                }
+            };
+
+            window.addEventListener('message', handler);
+        });
+    }
+
+    /**
+     * Open the embedded payment widget modal (recommended).
+     *
+     * Uses NOWPayments' official payment widget for zero-maintenance UI.
+     * Widget handles: currency selection, QR codes, exchange rates, payment tracking.
+     *
+     * @param {Object} options
+     * @param {number} options.amount - Payment amount
+     * @param {string} options.currency - Currency code (e.g., 'usd')
+     * @param {string} [options.description] - Payment description
+     * @param {string} [options.order_id] - Order ID
+     * @param {string} [options.success_url] - Success redirect URL
+     * @param {string} [options.cancel_url] - Cancel redirect URL
+     * @param {Object} [options.metadata] - Additional metadata
+     * @returns {Promise<Object>} Payment result
+     */
+    static async openEmbedded(options) {
+        const params = new URLSearchParams({
+            amount: options.amount,
+            currency: options.currency,
+        });
+
+        if (options.description) params.set('description', options.description);
+        if (options.order_id) params.set('order_id', options.order_id);
+        if (options.success_url) params.set('success_url', options.success_url);
+        if (options.cancel_url) params.set('cancel_url', options.cancel_url);
+        if (options.metadata) params.set('metadata', JSON.stringify(options.metadata));
+
+        // Open embedded widget modal
+        return new Promise((resolve, reject) => {
+            const modal = this.createEmbeddedModal();
+            const iframe = modal.querySelector('iframe');
+
+            iframe.src = `/cashier-nowpayments/checkout/embedded?${params.toString()}`;
+
+            // Listen for messages from iframe
+            const handler = (event) => {
+                if (event.data.type === 'cashier-checkout-loaded') {
+                    // Widget loaded successfully
+                }
                 if (event.data.type === 'cashier-checkout-complete') {
                     window.removeEventListener('message', handler);
                     this.closeModal(modal);
@@ -154,7 +219,12 @@ class CashierCheckout {
     }
 
     /**
-     * Get supported currencies.
+     * Get supported currencies with full details.
+     *
+     * Returns array of currency objects with:
+     * - code, name, ticker, network, blockchain
+     * - logo (URL from NOWPayments API)
+     * - is_popular, is_fiat, precision
      *
      * @returns {Promise<Object>}
      */
@@ -175,7 +245,8 @@ class CashierCheckout {
     }
 
     /**
-     * Create modal element.
+     * Create custom checkout modal element.
+     * Uses the custom checkout overlay with currency selector.
      */
     static createModal() {
         const modal = document.createElement('div');
@@ -232,6 +303,116 @@ class CashierCheckout {
             align-items: center;
             justify-content: center;
         `;
+        closeBtn.onclick = () => {
+            window.postMessage({ type: 'cashier-checkout-cancel' }, '*');
+        };
+
+        container.appendChild(iframe);
+        container.appendChild(closeBtn);
+        modal.appendChild(container);
+        document.body.appendChild(modal);
+
+        // Close on background click
+        modal.onclick = (e) => {
+            if (e.target === modal) {
+                window.postMessage({ type: 'cashier-checkout-cancel' }, '*');
+            }
+        };
+
+        return modal;
+    }
+
+    /**
+     * Create embedded payment widget modal element.
+     * Uses NOWPayments' official payment widget for zero-maintenance UI.
+     */
+    static createEmbeddedModal() {
+        const modal = document.createElement('div');
+        modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.75);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            z-index: 999999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            animation: fadeIn 0.3s ease-out;
+            cursor: pointer;
+        `;
+
+        const container = document.createElement('div');
+        container.style.cssText = `
+            background: white;
+            border-radius: 20px;
+            max-width: 460px;
+            width: 100%;
+            max-height: 90vh;
+            overflow: hidden;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4);
+            position: relative;
+            cursor: default;
+            animation: modalSlideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        `;
+
+        // Add animation keyframes
+        if (!document.getElementById('cashier-checkout-styles')) {
+            const style = document.createElement('style');
+            style.id = 'cashier-checkout-styles';
+            style.textContent = `
+                @keyframes fadeIn {
+                    from { opacity: 0; backdrop-filter: blur(0px); }
+                    to { opacity: 1; backdrop-filter: blur(12px); }
+                }
+                @keyframes modalSlideUp {
+                    from { opacity: 0; transform: translateY(50px) scale(0.92); }
+                    to { opacity: 1; transform: translateY(0) scale(1); }
+                }
+            `;
+            document.head.appendChild(style);
+        }
+
+        const iframe = document.createElement('iframe');
+        iframe.style.cssText = `
+            width: 100%;
+            height: 100%;
+            min-height: 600px;
+            border: none;
+        `;
+
+        const closeBtn = document.createElement('button');
+        closeBtn.innerHTML = '×';
+        closeBtn.style.cssText = `
+            position: absolute;
+            top: 14px;
+            right: 14px;
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 32px;
+            height: 32px;
+            font-size: 24px;
+            cursor: pointer;
+            z-index: 10;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+        `;
+        closeBtn.onmouseenter = () => {
+            closeBtn.style.background = 'rgba(255, 255, 255, 0.3)';
+            closeBtn.style.transform = 'scale(1.1) rotate(90deg)';
+        };
+        closeBtn.onmouseleave = () => {
+            closeBtn.style.background = 'rgba(255, 255, 255, 0.2)';
+            closeBtn.style.transform = 'scale(1) rotate(0deg)';
+        };
         closeBtn.onclick = () => {
             window.postMessage({ type: 'cashier-checkout-cancel' }, '*');
         };
