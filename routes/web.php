@@ -23,8 +23,11 @@ Route::prefix(config('cashier-nowpayments.routes.prefix', 'cashier-nowpayments')
     ->name(config('cashier-nowpayments.routes.name', 'cashier-nowpayments.'))
     ->middleware(config('cashier-nowpayments.routes.middleware', ['web']))
     ->group(function () {
-        // Checkout overlay
+        // Checkout overlay (custom UI)
         Route::get('/checkout', [CheckoutController::class, 'show'])->name('checkout');
+
+        // Embedded checkout with NOWPayments payment widget
+        Route::get('/checkout/embedded', [CheckoutController::class, 'showEmbedded'])->name('checkout.embedded');
 
         // Create payment via AJAX (rate limited to prevent abuse)
         Route::post('/checkout/payment', [CheckoutController::class, 'createPayment'])

@@ -63,6 +63,14 @@ class CashierNowPaymentsServiceProvider extends ServiceProvider
             'cashier-nowpayments'
         );
 
+        // Register CheckoutService as a singleton
+        $this->app->singleton(
+            \SerenityTechnologies\CashierNowPayments\Services\CheckoutService::class,
+            function ($app) {
+                return new \SerenityTechnologies\CashierNowPayments\Services\CheckoutService();
+            }
+        );
+
         // Note: Builder classes are not bound to the container.
         // They are instantiated directly via Billable trait methods:
         //   - $user->charge()   => PaymentBuilder
