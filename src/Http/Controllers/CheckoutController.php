@@ -211,7 +211,7 @@ class CheckoutController extends Controller
                 ], now()->addHours(24));
             }
 
-            $localPayment = $billable->charge($validated['amount'], $validated['currency'])
+            $localPayment = $billable->charge((float) $validated['amount'], $validated['currency'])
                 ->withPayCurrency($validated['pay_currency'])
                 ->withDescription($validated['description'] ?? '')
                 ->withOrderId($orderId)
