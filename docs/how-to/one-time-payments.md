@@ -8,6 +8,9 @@ This guide covers every way to accept a single crypto payment through the Larave
 
 1. [Architecture Overview](#1-architecture-overview)
 2. [Direct Payment via Billable Trait](#2-direct-payment-via-billable-trait)
+   - [CheckoutService Alternative](#checkoutservice-alternative-recommended)
+   - [Embedded Payment Widget](#25-embedded-payment-widget-zero-ui-maintenance)
+   - [Processing Fee Auto-Addition](#26-processing-fee-auto-addition)
 3. [Guest Checkout via Checkout Overlay](#3-guest-checkout-via-checkout-overlay)
 4. [Checkout UI (Blade View)](#4-checkout-ui-blade-view)
 5. [JavaScript Module (`CashierCheckout`)](#5-javascript-module-cashiercheckout)
@@ -61,6 +64,31 @@ This guide covers every way to accept a single crypto payment through the Larave
 ---
 
 ## 2. Direct Payment via Billable Trait
+
+### CheckoutService Alternative (Recommended)
+
+For a service-oriented approach, use the `CheckoutService` instead of direct builder calls:
+
+```php
+use SerenityTechnologies\CashierNowPayments\Facades\Checkout;
+
+// Via Facade
+$payment = Checkout::createPayment(49.99, 'usd', 'btc');
+
+// Via Billable trait
+$service = $user->checkout();
+$payment = $service->createPayment(49.99, 'usd', 'btc');
+
+// With validation (processing fee auto-added if below minimum)
+$validation = Checkout::validateAmount(49.99, 'usd', 'btc');
+if (!$validation->isValid()) {
+    // Fee automatically added to meet minimum
+}
+```
+
+The CheckoutService provides automatic processing fee calculation, session management, and embedded widget support. See [CheckoutService Documentation](../CHECKOUT_SERVICE.md) for full details.
+
+---
 
 ### Prerequisites
 
@@ -180,6 +208,57 @@ Event::listen(function (PaymentCreated $event) {
     $event->paymentResponse;   // The NOWPayments PaymentResponse DTO
 });
 ```
+
+---
+
+## 2.5 Embedded Payment Widget (Zero UI Maintenance)
+
+For a polished, zero-maintenance payment experience, use the embedded payment widget instead of the custom overlay:
+
+```php
+// Via route
+return redirect()->route('cashier-nowpayments.checkout.embedded', [
+    'amount' => 49.99,
+    'currency' => 'usd',
+    'description' => 'Premium Plan',
+    'success_url' => route('payment.success'),
+    'cancel_url' => route('payment.cancel'),
+]);
+
+// Via Billable trait
+$url = $user->embeddedCheckoutUrl(49.99, 'usd', [
+    'description' => 'Order #12345',
+    'success_url' => route('payment.success'),
+    'cancel_url' => route('cart'),
+]);
+```
+
+**Widget features:** Currency selection with 218 currencies and logos, real-time exchange rates, QR code display, payment tracking, countdown timer, auto-redirect on success, and automatic fallback to regular checkout if the widget fails.
+
+See [Embedded Checkout Documentation](../EMBEDDED_CHECKOUT.md) for full details.
+
+---
+
+## 2.6 Processing Fee Auto-Addition
+
+When a payment amount is below the NOWPayments minimum, the system automatically adds the difference as a processing fee:
+
+```php
+// Example: $19 order, minimum is $19.33
+// System calculates: $19.33 - $19.00 = $0.33 processing fee
+// Total charged: $19.33 (includes $0.33 fee)
+
+// Response includes:
+{
+    "success": true,
+    "price_amount": 19.33,
+    "processing_fee": "0.33",
+    "original_amount": "19",
+    "minimum_amount": "19.33"
+}
+```
+
+The payment description is automatically updated to include the fee notice, and metadata stores `processing_fee_applied: true` for audit purposes.
 
 ---
 
@@ -341,12 +420,14 @@ The checkout view (`resources/views/checkout.blade.php` in the package) renders 
 
 ### Key Features
 
-**Currency Selector**
-- Fetched asynchronously from `/checkout/currencies` on page load.
-- Popular currencies (`btc`, `eth`, `usdttrc20`, `usdterc20`, `ltc`, `trx`) are pinned to the top of the grid.
-- Clicking a currency triggers an estimate request.
+**Enhanced Currency Selector** (NEW)
+- Real-time search input to filter by name, ticker, code, or blockchain
+- Rich display with official NOWPayments coin logos (218 currencies downloaded)
+- Shows currency name, ticker, blockchain/network, and "Popular" badge
+- Smart sorting: popular currencies first, then alphabetical
+- Scrollable list with "no results" message when search has no matches
 
-**Estimate Display**
+**QR Code Display**
 - After selecting a currency, a POST to `/checkout/estimate` returns the crypto amount.
 - Displayed as "You will pay: 0.00148 BTC" in a highlighted box.
 

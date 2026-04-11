@@ -651,6 +651,28 @@ public readonly array $webhookData;
 
 ---
 
+## Embedded Widget for Payout Confirmations
+
+When paying out to recipients, you can use the embedded payment widget for a better UX if the recipient needs to confirm payout details:
+
+```php
+// For recipient-facing payout confirmation
+return redirect()->route('cashier-nowpayments.checkout.embedded', [
+    'amount' => $payout->amount,
+    'currency' => $payout->currency,
+    'description' => 'Payout to ' . $payout->address,
+    'order_id' => 'PAYOUT-' . $payout->id,
+    'success_url' => route('payouts.confirmation'),
+    'cancel_url' => route('payouts.show', $payout),
+    'metadata' => [
+        'payout_id' => $payout->id,
+        'type' => 'payout_confirmation',
+    ],
+]);
+```
+
+---
+
 ## Configuration
 
 Ensure these environment variables are set for payouts to work:

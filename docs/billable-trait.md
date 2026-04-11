@@ -605,6 +605,37 @@ return redirect()->away($user->checkoutUrl(25.00, 'USD', [
 ]));
 ```
 
+### `checkout(): CheckoutService`
+
+Returns the `CheckoutService` instance for service-oriented payment flows:
+
+```php
+// Access the CheckoutService
+$service = $user->checkout();
+
+// Create a session
+$session = $user->checkout()->createSession(49.99, 'usd');
+
+// Validate amount
+$validation = $user->checkout()->validateAmount(49.99, 'usd', 'btc');
+```
+
+### `embeddedCheckoutUrl(float $amount, string $currency, array $options = []): string`
+
+Generates a URL for the embedded payment widget checkout (zero-maintenance UI):
+
+```php
+$url = $user->embeddedCheckoutUrl(49.99, 'usd', [
+    'description' => 'Premium Plan',
+    'success_url' => route('payment.success'),
+    'cancel_url' => route('payment.cancel'),
+]);
+
+return redirect($url);
+```
+
+The embedded widget provides: currency selection with 218 currencies and logos, real-time exchange rates, QR code display, payment tracking, countdown timer, and automatic fallback to regular checkout if the widget fails.
+
 ---
 
 ## Quick Reference
@@ -621,4 +652,4 @@ return redirect()->away($user->checkoutUrl(25.00, 'USD', [
 | `ManagesConversions` | Crypto-to-crypto conversion | `convert()`, `remoteConversions()` |
 | `ManagesFiatPayouts` | Fiat provider queries | `fiatProviders()`, `supportedFiatCurrencies()` |
 | `ManagesPlans` | Plan listing and updates | `listPlans()`, `updatePlan()` |
-| `ProvidesCheckoutHelpers` | Frontend checkout HTML | `checkoutButton()`, `checkoutUrl()` |
+| `ProvidesCheckoutHelpers` | Frontend checkout helpers | `checkout()`, `checkoutButton()`, `checkoutUrl()`, `embeddedCheckoutUrl()` |

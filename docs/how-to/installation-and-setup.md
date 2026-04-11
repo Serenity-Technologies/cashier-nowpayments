@@ -326,6 +326,26 @@ CASHIER_NOWPAYMENTS_NOTIFY_SUBSCRIPTION_ACTIVATED=true
 
 ---
 
+## Step 4.5: Download Currency Images (Optional)
+
+The package includes a command to download all 218 currency logos from NOWPayments CDN for the enhanced currency selector:
+
+```bash
+php artisan cashier-nowpayments:download-currency-images
+```
+
+**Output:**
+```
+ INFO  Found 242 currencies. Downloading images...
+ 242/242 [▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓] 100%
+ INFO  Downloaded: 218.
+ INFO  Failed: 24.
+```
+
+Force re-download with `--force` flag. Images are saved to `resources/views/vendor/cashier-nowpayments/assets/coins/` and served from `/vendor/cashier-nowpayments/coins/{code}.svg`.
+
+---
+
 ## Step 5: Set Up the Billable Trait
 
 Add the `Billable` trait to any Eloquent model that should be able to make payments -- typically your `User` model.

@@ -340,6 +340,34 @@ All monetary calculations use `bcmath` functions (`bcadd`, `bcsub`, `bccomp`) wi
 
 ---
 
+## 4.5 Embedded Widget for Subscription Payments
+
+For a polished payment experience when users need to pay for their first subscription billing cycle, use the embedded payment widget:
+
+```php
+// Create subscription
+$subscription = $user->newSubscription('premium', $planId)
+    ->withTrialDays(14)
+    ->create();
+
+// Redirect to embedded widget for first payment
+return redirect()->route('cashier-nowpayments.checkout.embedded', [
+    'amount' => $subscription->total_price,
+    'currency' => $subscription->currency,
+    'description' => 'Subscription: ' . $subscription->type,
+    'order_id' => 'SUB-' . $subscription->id,
+    'success_url' => route('subscription.success'),
+    'cancel_url' => route('subscription.cancel'),
+    'metadata' => [
+        'subscription_id' => $subscription->id,
+    ],
+]);
+```
+
+**Widget handles:** currency selection with 218 currencies and logos, real-time exchange rates, QR code generation, payment tracking, auto-redirect to success_url, and webhook status updates. Falls back to regular checkout if widget fails.
+
+---
+
 ## 5. Querying Subscriptions
 
 The `Billable` trait provides several methods for querying subscription state.

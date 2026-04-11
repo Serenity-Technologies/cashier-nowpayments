@@ -243,6 +243,96 @@ The `payments()` relationship joins on `order_id`, so any payment made against t
 
 ---
 
+## Embedded Widget for Invoice Payments
+
+For a polished, zero-maintenance payment experience, use the embedded payment widget instead of redirecting to NOWPayments' hosted page.
+
+### Via Route
+
+```php
+return redirect()->route('cashier-nowpayments.checkout.embedded', [
+    'amount' => $invoice->amount,
+    'currency' => $invoice->currency,
+    'description' => 'Invoice #' . $invoice->id,
+    'order_id' => 'INV-' . $invoice->id,
+    'success_url' => route('invoices.show', $invoice),
+    'cancel_url' => route('invoices.show', $invoice),
+    'metadata' => [
+        'invoice_id' => $invoice->id,
+    ],
+]);
+```
+
+### Via Billable Trait
+
+```php
+$url = $user->embeddedCheckoutUrl($invoice->amount, $invoice->currency, [
+    'description' => 'Invoice #' . $invoice->id,
+    'order_id' => 'INV-' . $invoice->id,
+    'success_url' => route('invoices.show', $invoice),
+    'cancel_url' => route('invoices.show', $invoice),
+    'metadata' => ['invoice_id' => $invoice->id],
+]);
+
+return redirect($url);
+```
+
+### Widget Flow
+
+1. Creates invoice on NOWPayments API
+2. Displays widget in beautiful modal overlay
+3. User selects crypto, sees QR code, completes payment
+4. Auto-redirects to `success_url` after payment
+5. Webhook updates invoice status automatically
+6. `InvoicePaid` event dispatched
+
+### Widget Handles
+
+- ✅ Currency selection with 218 currencies and logos
+- ✅ Real-time exchange rates
+- ✅ QR code generation
+- ✅ Payment address display
+- ✅ Countdown timer
+- ✅ Payment status tracking
+- ✅ Success/cancel redirects
+- ✅ Fallback to regular checkout if widget fails
+
+---
+
+## Complete Invoice Flow Example
+
+```php
+// 1. Create invoice
+$invoice = $user->invoice(49.99, 'usd')
+    ->withDescription('Premium Plan')
+    ->withOrderId('INV-123')
+    ->withSuccessUrl(route('payment.success'))
+    ->withCancelUrl(route('cart'))
+    ->generate();
+
+// 2. Store in session for tracking
+session(['invoice_id' => $invoice->id]);
+
+// 3. Redirect to embedded widget (recommended)
+return redirect()->route('cashier-nowpayments.checkout.embedded', [
+    'amount' => $invoice->amount,
+    'currency' => $invoice->currency,
+    'description' => $invoice->order_description,
+    'order_id' => $invoice->order_id,
+    'success_url' => $invoice->success_url,
+    'cancel_url' => $invoice->cancel_url,
+]);
+
+// Alternative: Redirect to hosted page
+// return $invoice->redirect();
+
+// 4. Webhook updates invoice status automatically
+// 5. InvoicePaid event dispatched
+// 6. Listener grants access to premium features
+```
+
+---
+
 ## Paying an Invoice
 
 The `payInvoice()` method creates a **payment** on an existing invoice. This is used when a user wants to pay an invoice with a specific cryptocurrency.

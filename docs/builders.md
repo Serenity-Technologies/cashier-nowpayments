@@ -1,6 +1,39 @@
-# Builders (Fluent API)
+# Builders & Services
 
 Laravel Cashier NOWPayments provides five builder classes that implement the Fluent Interface pattern. Each builder encaps the configuration and creation of a specific domain object, offering chainable methods for optional parameters and terminal methods that execute the API call and optionally persist the result.
+
+---
+
+## CheckoutService (Recommended)
+
+**Namespace:** `SerenityTechnologies\CashierNowPayments\Services\CheckoutService`
+
+The `CheckoutService` provides a unified, service-oriented API for all checkout scenarios. It's the recommended approach for new implementations.
+
+```php
+use SerenityTechnologies\CashierNowPayments\Facades\Checkout;
+
+// Simple payment
+$payment = Checkout::createPayment(49.99, 'usd', 'btc');
+
+// Session management
+$session = Checkout::createSession(49.99, 'usd', [
+    'description' => 'Order #123',
+    'success_url' => route('checkout.success'),
+    'cancel_url' => route('checkout.cancel'),
+]);
+
+// Validation with automatic processing fee
+$validation = Checkout::validateAmount(49.99, 'usd', 'btc');
+if (!$validation->isValid()) {
+    // Fee automatically added to meet minimum
+}
+
+// Access via Billable trait
+$service = $user->checkout();
+```
+
+See [CheckoutService Documentation](CHECKOUT_SERVICE.md) for full details.
 
 ---
 

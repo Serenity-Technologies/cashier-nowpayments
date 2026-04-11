@@ -1018,6 +1018,37 @@ abstract class CashierNowPaymentsEvent
 |---|---|---|---|
 | `PayoutStatusUpdated` | `Payout` | Payout webhook received (for existing payout) | `$event->payout`, `$event->nowpaymentsPayload` |
 
+### Embedded Widget Webhooks
+
+When using the embedded payment widget, webhooks work identically to regular checkout. The widget creates an invoice on NOWPayments, and you receive the same webhook payloads:
+
+```php
+// Embedded widget creates invoice automatically
+// Webhook payload includes:
+{
+    "invoice_id": "5253875336",
+    "payment_status": "finished",
+    "price_amount": "49.99",
+    "price_currency": "usd",
+    "pay_amount": "0.00123",
+    "pay_currency": "btc",
+    "actually_paid": "0.00123",
+    "order_id": "INV-abc123",
+    "purchase_id": "xyz789"
+}
+
+// Handled by WebhookController::handleInvoice()
+// InvoicePaid event dispatched
+```
+
+**Key Points:**
+- Embedded widget automatically sets `success_url` and `cancel_url`
+- Invoice is created before widget loads
+- Webhook fires when payment completes
+- Same HMAC-SHA512 verification applies
+- Guest customers are linked via session-based customer record
+- Processing fee info is stored in payment metadata when applicable
+
 ### Listening to Events
 
 Register event listeners in your `EventServiceProvider`:
