@@ -86,12 +86,76 @@
         .currency-option:hover {
             background-color: #f3f4f6;
             border-color: #3b82f6;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
         }
 
         .currency-option.selected {
             background-color: #eff6ff;
             border-color: #3b82f6;
             border-width: 2px;
+        }
+
+        /* Search input */
+        .currency-search {
+            width: 100%;
+            padding: 10px 14px 10px 38px;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+
+        .currency-search:focus {
+            outline: none;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+
+        .search-wrapper {
+            position: relative;
+            margin-bottom: 12px;
+        }
+
+        .search-icon {
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 18px;
+            height: 18px;
+            color: #9ca3af;
+            pointer-events: none;
+        }
+
+        .no-results {
+            text-align: center;
+            padding: 40px 20px;
+            color: #6b7280;
+        }
+
+        .no-results svg {
+            width: 48px;
+            height: 48px;
+            margin: 0 auto 12px;
+            color: #d1d5db;
+        }
+
+        .currency-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 2px 8px;
+            border-radius: 9999px;
+            font-size: 11px;
+            font-weight: 500;
+            background: #f3f4f6;
+            color: #6b7280;
+            margin-left: 6px;
+        }
+
+        .popular-badge {
+            background: #fef3c7;
+            color: #92400e;
         }
     </style>
 </head>
@@ -129,8 +193,31 @@
                 <label class="block text-sm font-medium text-gray-700 mb-2">
                     {{ __('Select Payment Currency') }}
                 </label>
-                <div id="currencySelector" class="grid grid-cols-3 gap-3">
+
+                <!-- Search Input -->
+                <div class="search-wrapper">
+                    <svg class="search-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                    </svg>
+                    <input
+                        type="text"
+                        id="currencySearch"
+                        class="currency-search"
+                        placeholder="Search currencies (e.g., bitcoin, btc, ethereum...)"
+                        oninput="filterCurrencies(this.value)"
+                    >
+                </div>
+
+                <div id="currencySelector" class="space-y-2 max-h-64 overflow-y-auto pr-1">
                     <div class="spinner"></div>
+                </div>
+
+                <!-- No Results Message -->
+                <div id="noResults" class="no-results" style="display: none;">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    <div class="text-sm">No currencies match your search</div>
                 </div>
             </div>
 
@@ -263,6 +350,7 @@ let timerInterval = null;
 // Use server-provided timeout (seconds), fall back to 15 minutes
 let timeRemaining = CheckoutConfig.timeout_seconds ?? 900;
 let qrCodeInstance = null;
+let allCurrencies = [];
 
 // Initialize
 document.addEventListener('DOMContentLoaded', function() {
@@ -276,10 +364,37 @@ async function loadCurrencies() {
         const data = await response.json();
 
         if (data.success) {
+            allCurrencies = data.currencies;
             displayCurrencies(data.currencies);
         }
     } catch (error) {
         console.error('Failed to load currencies:', error);
+    }
+}
+
+// Filter currencies based on search
+function filterCurrencies(query) {
+    const searchTerm = query.toLowerCase().trim();
+
+    if (!searchTerm) {
+        displayCurrencies(allCurrencies);
+        document.getElementById('noResults').style.display = 'none';
+        return;
+    }
+
+    const filtered = allCurrencies.filter(currency =>
+        currency.code.toLowerCase().includes(searchTerm) ||
+        currency.name.toLowerCase().includes(searchTerm) ||
+        currency.ticker.toLowerCase().includes(searchTerm) ||
+        (currency.blockchain && currency.blockchain.toLowerCase().includes(searchTerm))
+    );
+
+    if (filtered.length === 0) {
+        document.getElementById('currencySelector').innerHTML = '';
+        document.getElementById('noResults').style.display = 'block';
+    } else {
+        document.getElementById('noResults').style.display = 'none';
+        displayCurrencies(filtered);
     }
 }
 
@@ -288,18 +403,43 @@ function displayCurrencies(currencies) {
     const container = document.getElementById('currencySelector');
     container.innerHTML = '';
 
-    const popular = ['btc', 'eth', 'usdttrc20', 'usdterc20', 'ltc', 'trx'];
-    const sorted = [...popular.filter(c => currencies.includes(c)), ...currencies.filter(c => !popular.includes(c))];
-
-    sorted.forEach(currency => {
+    currencies.forEach(currency => {
         const div = document.createElement('div');
-        div.className = 'currency-option p-3 border-2 border-gray-200 rounded-lg text-center';
+        div.className = 'currency-option p-3 border-2 border-gray-200 rounded-lg flex items-center gap-3';
+        div.dataset.currency = currency.code;
+
+        const popularBadge = currency.is_popular ?
+            `<span class="currency-badge popular-badge">★ Popular</span>` : '';
+
+        const networkBadge = currency.network ?
+            `<span class="text-xs text-gray-500">· ${escapeHtml(currency.network)}</span>` : '';
+
         div.innerHTML = `
-            <div class="font-bold text-sm uppercase">${currency}</div>
+            <img src="${currency.logo}" alt="${currency.name}" class="w-8 h-8 rounded-full" loading="lazy"
+                 onerror="this.src='https://assets.coingecko.com/coins/images/1/small/bitcoin.png'">
+            <div class="flex-1 min-w-0">
+                <div class="font-semibold text-sm text-gray-900 flex items-center flex-wrap gap-1">
+                    ${escapeHtml(currency.name)}
+                    ${popularBadge}
+                </div>
+                <div class="text-xs text-gray-500 mt-0.5 flex items-center flex-wrap gap-1">
+                    <span class="font-medium text-gray-700 uppercase">${escapeHtml(currency.ticker)}</span>
+                    ${networkBadge}
+                    <span class="text-gray-400">on</span>
+                    <span>${escapeHtml(currency.blockchain || currency.network || currency.ticker)}</span>
+                </div>
+            </div>
         `;
-        div.onclick = () => selectCurrency(currency);
+        div.onclick = () => selectCurrency(currency.code);
         container.appendChild(div);
     });
+}
+
+// Escape HTML to prevent XSS
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }
 
 // Select payment currency

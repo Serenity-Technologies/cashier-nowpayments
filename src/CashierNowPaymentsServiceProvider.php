@@ -6,6 +6,7 @@ namespace SerenityTechnologies\CashierNowPayments;
 
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
+use SerenityTechnologies\CashierNowPayments\Console\DownloadCurrencyImagesCommand;
 use SerenityTechnologies\CashierNowPayments\Console\InstallMigrationsCommand;
 use SerenityTechnologies\CashierNowPayments\Console\PruneWebhookLogsCommand;
 use SerenityTechnologies\CashierNowPayments\Http\Controllers\WebhookController;
@@ -40,6 +41,10 @@ class CashierNowPaymentsServiceProvider extends ServiceProvider
         ], 'cashier-nowpayments-assets');
 
         $this->publishes([
+            __DIR__ . '/../public/coins' => public_path('vendor/cashier-nowpayments/coins'),
+        ], 'cashier-nowpayments-coin-images');
+
+        $this->publishes([
             __DIR__ . '/../database/migrations/stubs' => database_path('migrations'),
         ], 'cashier-nowpayments-migrations');
 
@@ -47,7 +52,12 @@ class CashierNowPaymentsServiceProvider extends ServiceProvider
             $this->commands([
                 InstallMigrationsCommand::class,
                 PruneWebhookLogsCommand::class,
+                DownloadCurrencyImagesCommand::class,
+                ExtractCoinImagesCommand::class,
             ]);
+
+            // Auto-extract coin images after install
+            $this->extractCoinsIfNotExists();
         }
 
         $this->registerRoutes();
@@ -103,5 +113,35 @@ class CashierNowPaymentsServiceProvider extends ServiceProvider
         ], function () {
             $this->loadRoutesFrom(__DIR__ . '/../routes/web.php');
         });
+    }
+
+    /**
+     * Auto-extract coin images if not already present.
+     */
+    protected function extractCoinsIfNotExists(): void
+    {
+        $coinsPath = __DIR__ . '/../../public/coins';
+        $archivePath = __DIR__ . '/../../public/coins.tar.gz';
+
+        // Skip if coins already extracted
+        if (is_dir($coinsPath) && count(glob($coinsPath . '/*.svg')) > 0) {
+            return;
+        }
+
+        // Skip if archive doesn't exist
+        if (!file_exists($archivePath)) {
+            return;
+        }
+
+        try {
+            if (!is_dir($coinsPath)) {
+                mkdir($coinsPath, 0755, true);
+            }
+
+            $phar = new \PharData($archivePath);
+            $phar->extractTo($coinsPath, null, true);
+        } catch (\Exception $e) {
+            // Silently fail - coins can be extracted manually later
+        }
     }
 }

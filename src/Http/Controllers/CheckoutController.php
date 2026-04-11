@@ -369,17 +369,55 @@ class CheckoutController extends Controller
     }
 
     /**
-     * Get supported currencies for checkout.
+     * Get supported currencies for checkout with full details.
      */
     public function getSupportedCurrencies(): JsonResponse
     {
         try {
             $currencies = Cache::remember(
-                'nowpayments.currencies.available',
+                'nowpayments.currencies.detailed',
                 now()->addHour(),
                 function () {
-                    $response = NowPayments::getAvailableCurrencies();
-                    return $response->currencies ?? [];
+                    // Get available currency codes
+                    $availableResponse = NowPayments::getAvailableCurrencies();
+                    $availableCodes = $availableResponse->currencies ?? [];
+
+                    // Get full currency details
+                    try {
+                        $fullResponse = NowPayments::getFullCurrencies();
+                        $fullCurrencies = $fullResponse ?? [];
+                    } catch (\Exception $e) {
+                        $fullCurrencies = [];
+                    }
+
+                    // Map available codes to their full details
+                    $popular = ['btc', 'eth', 'usdttrc20', 'usdterc20', 'ltc', 'trx', 'usdc', 'bnbbsc', 'doge', 'xrp', 'sol', 'ada'];
+
+                    $currencies = array_map(function ($code) use ($fullCurrencies) {
+                        $fullCurrency = collect($fullCurrencies)->firstWhere('ticker', $code)
+                            ?? collect($fullCurrencies)->firstWhere('network', $code);
+
+                        return [
+                            'code' => $code,
+                            'name' => $fullCurrency->name ?? strtoupper($code),
+                            'ticker' => $fullCurrency->ticker ?? strtoupper($code),
+                            'network' => $fullCurrency->network ?? null,
+                            'blockchain' => $fullCurrency->blockchain ?? $fullCurrency->network ?? strtoupper($code),
+                            'logo' => $this->getCurrencyLogoUrl($code),
+                            'is_popular' => in_array($code, $popular, true),
+                            'is_fiat' => $fullCurrency->is_fiat ?? false,
+                        ];
+                    }, $availableCodes);
+
+                    // Sort: popular first, then alphabetical
+                    usort($currencies, function ($a, $b) {
+                        if ($a['is_popular'] !== $b['is_popular']) {
+                            return $b['is_popular'] <=> $a['is_popular'];
+                        }
+                        return $a['name'] <=> $b['name'];
+                    });
+
+                    return $currencies;
                 }
             );
 
@@ -393,6 +431,30 @@ class CheckoutController extends Controller
                 'message' => 'Failed to load currencies.',
             ], 500);
         }
+    }
+
+    /**
+     * Get the logo URL for a currency.
+     * Uses local images if available, falls back to NOWPayments CDN.
+     */
+    protected function getCurrencyLogoUrl(string $code): string
+    {
+        $code = strtolower($code);
+
+        // Check if local image exists in public directory
+        $publicPath = public_path('vendor/cashier-nowpayments/coins/' . $code . '.svg');
+        $packagePath = __DIR__ . '/../public/coins/' . $code . '.svg';
+
+        if (file_exists($publicPath)) {
+            return asset('vendor/cashier-nowpayments/coins/' . $code . '.svg');
+        }
+
+        if (file_exists($packagePath)) {
+            return asset('vendor/cashier-nowpayments/coins/' . $code . '.svg');
+        }
+
+        // Fallback to NOWPayments CDN
+        return "https://nowpayments.io/images/coins/{$code}.svg";
     }
 
     /**
