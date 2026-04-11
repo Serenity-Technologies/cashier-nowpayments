@@ -246,7 +246,9 @@ class CheckoutService
         $estimate = $this->getEstimate($amount, $fromCurrency, $toCurrency);
         $minimum = $this->getMinimumPaymentAmount($fromCurrency, $toCurrency);
 
-        $isValid = $estimate->getEstimatedAmount() >= $minimum;
+        // IMPORTANT: getMinAmount() returns the minimum in the FROM currency (fiat),
+        // NOT the TO currency (crypto). Compare fiat amount against fiat minimum.
+        $isValid = bccomp((string) $amount, (string) $minimum, 8) >= 0;
 
         return new ValidationResult(
             valid: $isValid,
@@ -278,13 +280,27 @@ class CheckoutService
         string $payCurrency,
         array $options = []
     ): PaymentResult {
-        // Validate amount first
+        // Validate amount and automatically add processing fee if below minimum
         $validation = $this->validateAmount($amount, $currency, $payCurrency);
+        $originalAmount = $amount;
+        $processingFee = '0';
+
         if (!$validation->isValid()) {
-            throw new CheckoutException(
-                "Amount {$amount} {$currency} is below minimum. Minimum: {$validation->getMinimumAmount()} {$validation->getCurrency()}",
-                422
-            );
+            // Calculate the difference and add it as processing fee
+            $processingFee = bcsub((string) $validation->getMinimumAmount(), (string) $amount, 8);
+            $amount = (float) bcadd((string) $amount, $processingFee, 8);
+
+            // Update description to include processing fee notice
+            $feeDisplay = rtrim(rtrim($processingFee, '0'), '.');
+            $options['description'] = ($options['description'] ?? '')
+                . ' (incl. $' . $feeDisplay . ' processing fee)';
+
+            // Add processing fee to metadata
+            $options['metadata'] = array_merge($options['metadata'] ?? [], [
+                'original_amount' => $originalAmount,
+                'processing_fee' => $processingFee,
+                'minimum_amount' => $validation->getMinimumAmount(),
+            ]);
         }
 
         try {
@@ -304,6 +320,12 @@ class CheckoutService
 
             $response = NowPayments::createPayment($request);
 
+            // Build metadata with processing fee info
+            $metadata = $options['metadata'] ?? [];
+            if ($processingFee !== '0') {
+                $metadata['processing_fee_applied'] = true;
+            }
+
             return new PaymentResult(
                 paymentId: (string) $response->payment_id,
                 purchaseId: (string) $response->purchase_id,
@@ -316,7 +338,7 @@ class CheckoutService
                 description: $response->order_description,
                 qrCodeUri: $this->generateQrCodeUri($response->pay_address, (float) $response->pay_amount),
                 expirationTime: now()->addMinutes(15)->toIso8601String(),
-                metadata: $options['metadata'] ?? [],
+                metadata: $metadata,
             );
         } catch (\Exception $e) {
             report($e);

@@ -177,18 +177,26 @@ class CheckoutController extends Controller
                 amount: $validated['amount'],
             )));
 
-            // Check minimum payment amount using precise comparison
+            // Check minimum payment amount using precise comparison.
+            // IMPORTANT: getMinAmount() returns the minimum in the FROM currency (fiat),
+            // NOT the TO currency (crypto). So we compare fiat amount against fiat minimum.
             $minAmount = $this->withRetry(fn() => NowPayments::getMinAmount(new MinAmountRequest(
                 currencyFrom: $validated['currency'],
                 currencyTo: $validated['pay_currency'],
             )));
 
-            if (bccomp((string) $estimate->estimated_amount, (string) $minAmount->min_amount, 8) < 0) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Amount is below minimum payment requirement.',
-                    'minimum' => $minAmount->min_amount,
-                ], 422);
+            // If amount is below minimum, automatically add the difference as a processing fee
+            $processingFee = '0';
+            $originalAmount = $validated['amount'];
+            if (bccomp((string) $originalAmount, (string) $minAmount->min_amount, 8) < 0) {
+                // Calculate the difference and add it as processing fee
+                $processingFee = bcsub((string) $minAmount->min_amount, (string) $originalAmount, 8);
+                $validated['amount'] = bcadd((string) $originalAmount, $processingFee, 8);
+
+                // Update description to include processing fee notice
+                $feeDisplay = rtrim(rtrim($processingFee, '0'), '.');
+                $validated['description'] = ($validated['description'] ?? '')
+                    . ' (incl. $' . $feeDisplay . ' processing fee)';
             }
 
             // Use PaymentBuilder for ALL checkouts (authenticated and guest)
@@ -207,9 +215,14 @@ class CheckoutController extends Controller
                 ->withPayCurrency($validated['pay_currency'])
                 ->withDescription($validated['description'] ?? '')
                 ->withOrderId($orderId)
+                ->withMetadata($processingFee !== '0' ? [
+                    'original_amount' => $originalAmount,
+                    'processing_fee' => $processingFee,
+                    'minimum_amount' => $minAmount->min_amount,
+                ] : [])
                 ->charge();
 
-            $response = [
+            $responseData = [
                 'success' => true,
                 'payment_id' => $localPayment->nowpayments_payment_id,
                 'purchase_id' => $localPayment->nowpayments_purchase_id,
@@ -224,10 +237,17 @@ class CheckoutController extends Controller
                 'timeout_seconds' => config('cashier-nowpayments.checkout.payment_timeout_seconds', 900),
             ];
 
-            // Cache response for idempotency (5 minutes)
-            Cache::put('checkout.payment.' . $idempotencyKey, $response, now()->addMinutes(5));
+            // Include processing fee info if applied
+            if ($processingFee !== '0') {
+                $responseData['processing_fee'] = $processingFee;
+                $responseData['original_amount'] = $originalAmount;
+                $responseData['minimum_amount'] = $minAmount->min_amount;
+            }
 
-            return response()->json($response);
+            // Cache response for idempotency (5 minutes)
+            Cache::put('checkout.payment.' . $idempotencyKey, $responseData, now()->addMinutes(5));
+
+            return response()->json($responseData);
         } catch (\Exception $e) {
             report($e);
 
