@@ -591,7 +591,9 @@ function copyAddress() {
 function startStatusPolling() {
     statusCheckInterval = setInterval(async () => {
         try {
-            const response = await fetch(`{{ route('cashier-nowpayments.payment.status', '') }}/${currentPayment.purchase_id}`);
+            const baseUrl = '{{ route('cashier-nowpayments.payment.status', ['paymentId' => 'PLACEHOLDER']) }}';
+            const url = baseUrl.replace('PLACEHOLDER', currentPayment.payment_id);
+            const response = await fetch(url);
             const data = await response.json();
 
             if (data.success) {

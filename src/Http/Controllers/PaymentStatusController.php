@@ -7,6 +7,7 @@ namespace SerenityTechnologies\CashierNowPayments\Http\Controllers;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
+use Illuminate\Support\Facades\Cache;
 use SerenityTechnologies\CashierNowPayments\Models\Payment;
 use SerenityTechnologies\NowPayments\Facades\NowPayments;
 
@@ -18,7 +19,7 @@ class PaymentStatusController extends Controller
      * Uses a short-lived cache to prevent excessive API calls when
      * the frontend polls every few seconds.
      */
-    public function check(string $purchaseId, Request $request): JsonResponse
+    public function check(string $paymentId, Request $request): JsonResponse
     {
         $authConfig = config('cashier-nowpayments.payment_status.auth', []);
 
@@ -37,9 +38,9 @@ class PaymentStatusController extends Controller
             $paymentModel = config('cashier-nowpayments.model.payment', Payment::class);
             $ownsPayment = $paymentModel::where('billable_type', $user->getMorphClass())
                 ->where('billable_id', $user->getKey())
-                ->where(function ($query) use ($purchaseId) {
-                    $query->where('nowpayments_purchase_id', $purchaseId)
-                        ->orWhere('nowpayments_payment_id', $purchaseId);
+                ->where(function ($query) use ($paymentId) {
+                    $query->where('nowpayments_purchase_id', $paymentId)
+                        ->orWhere('nowpayments_payment_id', $paymentId);
                 })
                 ->exists();
 
@@ -52,16 +53,16 @@ class PaymentStatusController extends Controller
         }
 
         // Use a short-lived cache to reduce API calls during polling
-        $cacheSeconds = config('cashier-nowpayments.payment_status.cache_seconds', 10);
-        $cacheKey = "nowpayments.status.remote.{$purchaseId}";
+        $cacheSeconds = (int) config('cashier-nowpayments.payment_status.cache_seconds', 10);
+        $cacheKey = "nowpayments.status.remote.{$paymentId}";
 
         try {
-            $cached = \Illuminate\Support\Facades\Cache::get($cacheKey);
+            $cached = Cache::get($cacheKey);
             if ($cached !== null) {
                 return response()->json($cached);
             }
 
-            $payment = NowPayments::getPaymentStatus($purchaseId);
+            $payment = NowPayments::getPaymentStatus($paymentId);
 
             $status = match ($payment->payment_status) {
                 'finished' => 'completed',
@@ -81,7 +82,7 @@ class PaymentStatusController extends Controller
                 'pay_currency' => $payment->pay_currency,
             ];
 
-            \Illuminate\Support\Facades\Cache::put($cacheKey, $result, now()->addSeconds($cacheSeconds));
+            Cache::put($cacheKey, $result, now()->addSeconds($cacheSeconds));
 
             return response()->json($result);
         } catch (\Exception $e) {
@@ -119,7 +120,7 @@ class PaymentStatusController extends Controller
 
             // Sync with NOWPayments only if pending AND cooldown has elapsed
             if ($payment->isPending()) {
-                $cooldownSeconds = config('cashier-nowpayments.checkout.sync_cooldown_seconds', 15);
+                $cooldownSeconds = (int) config('cashier-nowpayments.checkout.sync_cooldown_seconds', 15);
                 $lastSync = $payment->metadata['last_status_sync'] ?? null;
 
                 if ($lastSync === null || now()->diffInSeconds(new \DateTime($lastSync)) > $cooldownSeconds) {

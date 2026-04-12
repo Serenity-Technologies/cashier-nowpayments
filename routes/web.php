@@ -54,7 +54,7 @@ Route::prefix(config('cashier-nowpayments.routes.prefix', 'cashier-nowpayments')
             ->name('checkout.estimate');
 
         // Check payment status (for polling) — rate limited + auth configurable
-        Route::get('/payment/status/{purchaseId}', [PaymentStatusController::class, 'check'])
+        Route::get('/payment/status/{paymentId}', [PaymentStatusController::class, 'check'])
             ->middleware(['throttle:30,1', 'nowpayments.payment.auth'])
             ->name('payment.status');
 
