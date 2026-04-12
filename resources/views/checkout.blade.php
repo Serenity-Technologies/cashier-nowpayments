@@ -461,6 +461,7 @@ async function selectCurrency(currencyCode, event) {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
+                'Accept': 'application/json',
                 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
             },
             body: JSON.stringify({
@@ -469,6 +470,15 @@ async function selectCurrency(currencyCode, event) {
                 to_currency: currencyCode
             })
         });
+
+        // Check if response is JSON
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+            const text = await response.text();
+            console.error('Expected JSON but got:', text.substring(0, 200));
+            showError('Server returned an invalid response. Please try again.');
+            return;
+        }
 
         const data = await response.json();
 
@@ -481,6 +491,7 @@ async function selectCurrency(currencyCode, event) {
         }
     } catch (error) {
         console.error('Failed to get estimate:', error);
+        showError('Failed to get estimate. Please try again.');
     }
 }
 
@@ -495,6 +506,7 @@ async function createPayment() {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
+                'Accept': 'application/json',
                 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
             },
             body: JSON.stringify({

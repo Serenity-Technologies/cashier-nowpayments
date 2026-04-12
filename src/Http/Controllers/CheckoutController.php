@@ -464,11 +464,21 @@ class CheckoutController extends Controller
      */
     public function getEstimate(Request $request): JsonResponse
     {
-        $validated = $request->validate([
+        // Manual validation to ensure JSON response on error
+        $validator = \Illuminate\Support\Facades\Validator::make($request->all(), [
             'amount' => 'required|numeric|min:0.01',
             'from_currency' => 'required|string',
             'to_currency' => 'required|string',
         ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => $validator->errors()->first(),
+            ], 422);
+        }
+
+        $validated = $validator->validated();
 
         try {
             $estimate = $this->withRetry(fn() => NowPayments::getEstimate(new EstimateRequest(
