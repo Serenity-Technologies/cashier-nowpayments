@@ -30,7 +30,7 @@ This guide covers every way to accept a single crypto payment through the Larave
 │                                                                     │
 │  ┌───────────┐    Billable trait    ┌───────────────┐               │
 │  │   User     │ ──────────────────► │ PaymentBuilder │               │
-│  │  (Model)   │  $user->charge()    │   (fluent)     │               │
+│  │  (Model)   │  $user->newPayment()    │   (fluent)     │               │
 │  └───────────┘                     └───────┬───────┘               │
 │                                            │                        │
 │                    ┌───────────────────────┼────────────────┐       │
@@ -58,7 +58,7 @@ This guide covers every way to accept a single crypto payment through the Larave
 
 | Path | Entry Point | Result | Best For |
 |------|-------------|--------|----------|
-| **Direct (Billable)** | `$user->charge()` | Persisted `Payment` model + API call | Server-initiated charges, admin actions |
+| **Direct (Billable)** | `$user->newPayment()` | Persisted `Payment` model + API call | Server-initiated charges, admin actions |
 | **Checkout Overlay** | GET `/cashier-nowpayments/checkout` | Full UI with currency selection, QR, polling | Customer-facing self-service payments |
 
 ---
@@ -111,7 +111,7 @@ The `charge()` method on the billable model starts a fluent `PaymentBuilder`:
 use SerenityTechnologies\CashierNowPayments\Models\Payment;
 
 // Start building a payment
-$builder = $user->charge(49.99, 'usd');
+$builder = $user->newPayment(49.99, 'usd');
 ```
 
 ### Builder Methods
@@ -132,7 +132,7 @@ Chain any combination of these methods before finalizing:
 ### Full Example
 
 ```php
-$payment = $user->charge(99.00, 'usd')
+$payment = $user->newPayment(99.00, 'usd')
     ->withPayCurrency('eth')
     ->withDescription('Q2 Consulting Package')
     ->withOrderId('CONSULT-' . $project->id)
@@ -162,7 +162,7 @@ echo $payment->nowpayments_payment_id;
 
 ```php
 // Using ->create() — returns DTO, nothing saved to DB
-$dto = $user->charge(10.00, 'usd')
+$dto = $user->newPayment(10.00, 'usd')
     ->withDescription('Test')
     ->create();
 
@@ -170,7 +170,7 @@ echo get_class($dto); // SerenityTechnologies\NowPayments\DTOs\Response\PaymentR
 echo $dto->pay_address;
 
 // Using ->charge() — persists to DB inside a transaction
-$payment = $user->charge(10.00, 'usd')
+$payment = $user->newPayment(10.00, 'usd')
     ->withDescription('Test')
     ->charge();
 
@@ -183,7 +183,7 @@ echo $payment->id; // ULID primary key
 When `->withCredits()` is enabled, the builder checks the customer's available credits and consumes them in FIFO order before creating the NOWPayments charge:
 
 ```php
-$payment = $user->charge(100.00, 'usd')
+$payment = $user->newPayment(100.00, 'usd')
     ->withCredits()
     ->charge();
 
@@ -832,7 +832,7 @@ CASHIER_NOWPAYMENTS_CURRENCY=usd
 
 ```php
 // Admin or system charges a user, then redirects to payment page
-$payment = $user->charge(25.00, 'usd')
+$payment = $user->newPayment(25.00, 'usd')
     ->withDescription('Account top-up')
     ->withOrderId('TOPUP-' . time())
     ->charge();

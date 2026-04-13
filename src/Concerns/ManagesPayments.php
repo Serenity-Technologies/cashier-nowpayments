@@ -17,13 +17,21 @@ trait ManagesPayments
     /**
      * Begin creating a new one-time payment.
      */
-    public function charge(float $amount, string $currency): PaymentBuilder
+    public function newPayment(float $amount, string $currency): PaymentBuilder
     {
         $customer = $this->createOrGetCustomer();
 
         return new PaymentBuilder($this, $customer, $amount, $currency);
     }
 
+    /**
+     * @deprecated use newPayment
+     * Begin creating a new one-time payment.
+     */
+    public function charge(float $amount, string $currency): PaymentBuilder
+    {
+        return $this->newPayment($amount, $currency);
+    }
     /**
      * Get all payments for the billable model.
      */
