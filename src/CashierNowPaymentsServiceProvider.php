@@ -84,7 +84,7 @@ class CashierNowPaymentsServiceProvider extends ServiceProvider
 
         // Note: Builder classes are not bound to the container.
         // They are instantiated directly via Billable trait methods:
-        //   - $user->charge()   => PaymentBuilder
+        //   - $user->newPayment()   => PaymentBuilder
         //   - $user->invoice()  => InvoiceBuilder
         //   - $user->newSubscription() => SubscriptionBuilder
 

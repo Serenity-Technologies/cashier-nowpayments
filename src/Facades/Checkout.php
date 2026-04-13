@@ -19,7 +19,7 @@ use Illuminate\Support\Facades\Facade;
  * @method static \SerenityTechnologies\CashierNowPayments\Support\EstimateResult getEstimate(float $amount, string $fromCurrency, string $toCurrency, bool $forceRefresh = false)
  * @method static \SerenityTechnologies\CashierNowPayments\Support\ValidationResult validateAmount(float $amount, string $fromCurrency, string $toCurrency)
  * @method static \SerenityTechnologies\CashierNowPayments\Support\PaymentResult createPayment(float $amount, string $currency, string $payCurrency, array $options = [])
- * @method static \SerenityTechnologies\CashierNowPayments\Support\InvoiceResult createInvoice(float $amount, string $currency, array $options = [])
+ * @method static \SerenityTechnologies\NowPayments\DTOs\Response\InvoiceResponse createInvoice(float $amount, string $currency, array $options = [])
  * @method static \SerenityTechnologies\CashierNowPayments\Models\Payment completeCheckout(\SerenityTechnologies\CashierNowPayments\Support\PaymentResult $paymentResult, \SerenityTechnologies\CashierNowPayments\Models\Customer $customer, ?\Illuminate\Database\Eloquent\Model $billable = null)
  * @method static string generateQrCodeUri(string $address, float $amount)
  *

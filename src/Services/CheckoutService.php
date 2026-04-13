@@ -7,13 +7,13 @@ namespace SerenityTechnologies\CashierNowPayments\Services;
 use Illuminate\Support\Facades\Cache;
 use SerenityTechnologies\CashierNowPayments\Exceptions\CheckoutException;
 use SerenityTechnologies\CashierNowPayments\Models\Customer;
+use SerenityTechnologies\CashierNowPayments\Models\Invoice;
 use SerenityTechnologies\CashierNowPayments\Models\Payment;
 use SerenityTechnologies\CashierNowPayments\Support\CheckoutSession;
 use SerenityTechnologies\CashierNowPayments\Support\EstimateResult;
-use SerenityTechnologies\CashierNowPayments\Support\InvoiceResult;
 use SerenityTechnologies\CashierNowPayments\Support\PaymentResult;
 use SerenityTechnologies\CashierNowPayments\Support\ValidationResult;
-use SerenityTechnologies\NowPayments\DTOs\Request\{EstimateRequest, MinAmountRequest, PaymentRequest};
+use SerenityTechnologies\NowPayments\DTOs\Request\{EstimateRequest, InvoicePaymentRequest, MinAmountRequest, PaymentRequest};
 use SerenityTechnologies\NowPayments\Facades\NowPayments;
 
 /**
@@ -355,40 +355,112 @@ class CheckoutService
      * @param float $amount The payment amount
      * @param string $currency The fiat currency
      * @param array $options Additional options
-     * @return InvoiceResult
+     * @return \SerenityTechnologies\NowPayments\DTOs\Response\InvoiceResponse
      */
     public function createInvoice(
         float $amount,
         string $currency,
-        array $options = []
-    ): InvoiceResult {
+        ?string $ipnCallbackUrl,
+        ?string $orderId,
+        ?string $orderDescription,
+        ?string $successUrl,
+        ?string $cancelUrl,
+        ?string $partiallyPaidUrl,
+        ?bool $isFixedRate,
+    ): \SerenityTechnologies\NowPayments\DTOs\Response\InvoiceResponse
+    {
         try {
-            $response = NowPayments::createInvoice(new \SerenityTechnologies\NowPayments\DTOs\Request\InvoiceRequest(
+            return NowPayments::createInvoice(new \SerenityTechnologies\NowPayments\DTOs\Request\InvoiceRequest(
                 priceAmount: $amount,
                 priceCurrency: $currency,
-                ipnCallbackUrl: $options['ipn_callback_url'] ?? $this->getDefaultWebhookUrl(),
-                orderId: $options['order_id'] ?? $this->generateOrderId(),
-                orderDescription: $options['description'] ?? null,
-                successUrl: $options['success_url'] ?? config('app.url'),
-                cancelUrl: $options['cancel_url'] ?? config('app.url'),
-                partiallyPaidUrl: $options['partially_paid_url'] ?? null,
-                isFixedRate: $options['fixed_rate'] ?? config('cashier-nowpayments.fixed_rate', false),
+                ipnCallbackUrl: $ipnCallbackUrl ?? $this->getDefaultWebhookUrl(),
+                orderId: $orderId ?? $this->generateOrderId(),
+                orderDescription: $orderDescription ?? null,
+                successUrl: $successUrl ?? config('app.url'),
+                cancelUrl: $cancelUrl ?? config('app.url'),
+                partiallyPaidUrl: $partiallyPaidUrl ?? null,
+                isFixedRate: $isFixedRate ?? config('cashier-nowpayments.fixed_rate', false),
             ));
-
-            return new InvoiceResult(
-                invoiceId: (string) $response->id,
-                invoiceUrl: $response->invoice_url,
-                orderId: $response->order_id,
-                description: $response->order_description,
-                amount: (float) $response->price_amount,
-                currency: $response->price_currency,
-                successUrl: $options['success_url'] ?? config('app.url'),
-                cancelUrl: $options['cancel_url'] ?? config('app.url'),
-                expiresAt: $response->expires_at ?? null,
-            );
         } catch (\Exception $e) {
             report($e);
             throw new CheckoutException('Failed to create invoice: ' . $e->getMessage(), 0, $e);
+        }
+    }
+
+    /**
+     * Create a payment for an existing invoice.
+     *
+     * This uses NOWPayments' createInvoicePayment API to generate a crypto
+     * payment address for the given invoice. The customer can then send crypto
+     * to the generated address to pay the invoice.
+     *
+     * Flow:
+     * 1. Create invoice (via createInvoice or InvoiceBuilder)
+     * 2. Customer selects crypto currency
+     * 3. Call payInvoice to get deposit address + QR code
+     * 4. Display payment details to customer
+     * 5. Monitor payment status (via webhooks or polling)
+     *
+     * @param Invoice $invoice The invoice to pay
+     * @param string $payCurrency The cryptocurrency to pay with (e.g., 'btc', 'eth')
+     * @param array $options Additional options
+     * @return PaymentResult
+     * @throws CheckoutException
+     */
+    public function payInvoice(
+        Invoice $invoice,
+        string $payCurrency,
+        array $options = []
+    ): PaymentResult {
+        // Validate invoice is active
+        if (!$invoice->isActive()) {
+            throw new CheckoutException('Invoice is not active. Status: ' . $invoice->status);
+        }
+
+        // Validate minimum amount
+        $minimum = $this->getMinimumPaymentAmount($invoice->currency, $payCurrency);
+        if (bccomp((string) $invoice->amount, (string) $minimum, 8) < 0) {
+            throw new CheckoutException('Amount is below minimum payment requirement.');
+        }
+
+        try {
+            $request = new InvoicePaymentRequest(
+                iid: $invoice->nowpayments_invoice_id,
+                payCurrency: $payCurrency,
+                orderDescription: $invoice->order_description,
+                customerEmail: $invoice->customer->email,
+                payoutAddress: $options['payout_address'] ?? null,
+            );
+
+            $response = NowPayments::createInvoicePayment($request);
+
+            // Fire event
+            \SerenityTechnologies\CashierNowPayments\Events\PaymentCreated::dispatch(
+                $invoice->billable ?? $invoice->customer,
+                $invoice->customer,
+                $response
+            );
+
+            return new PaymentResult(
+                paymentId: (string) $response->payment_id,
+                purchaseId: (string) $response->purchase_id,
+                payAddress: $response->pay_address,
+                payAmount: (float) $response->pay_amount,
+                payCurrency: $response->pay_currency,
+                priceAmount: (float) $response->price_amount,
+                priceCurrency: $response->price_currency,
+                orderId: $response->order_id,
+                description: $response->order_description,
+                qrCodeUri: $this->generateQrCodeUri($response->pay_address, (float) $response->pay_amount),
+                expirationTime: now()->addMinutes(15)->toIso8601String(),
+                metadata: array_merge($options['metadata'] ?? [], [
+                    'invoice_id' => $invoice->id,
+                    'nowpayments_invoice_id' => $invoice->nowpayments_invoice_id,
+                ]),
+            );
+        } catch (\Exception $e) {
+            report($e);
+            throw new CheckoutException('Failed to create invoice payment: ' . $e->getMessage(), 0, $e);
         }
     }
 
