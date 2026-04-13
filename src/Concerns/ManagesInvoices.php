@@ -41,7 +41,9 @@ trait ManagesInvoices
         $request = new InvoicePaymentRequest(
             iid: $invoice->nowpayments_invoice_id,
             payCurrency: $payCurrency,
-            payoutAddress: $payoutAddress,
+            orderDescription: $invoice->order_description,
+            customerEmail: $invoice->customer->email,
+            payoutAddress: $payoutAddress
         );
 
         $response = NowPayments::createInvoicePayment($request);

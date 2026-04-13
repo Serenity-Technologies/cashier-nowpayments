@@ -378,6 +378,147 @@ You can use these to display a payment screen or generate a QR code.
 
 ---
 
+## Paying an Invoice with Crypto
+
+The "Create payment by invoice" flow allows you to generate a crypto payment address for an existing invoice. This is useful when you want the customer to select their preferred cryptocurrency after the invoice has been created.
+
+### Flow Overview
+
+1. **Create invoice** — Via `InvoiceBuilder`, `CheckoutService::createInvoice()`, or the API
+2. **Customer selects crypto** — Choose which cryptocurrency to pay with
+3. **Call payInvoice** — Generates deposit address + QR code via NOWPayments
+4. **Display payment details** — Show address, amount, and QR code to customer
+5. **Monitor payment** — Via webhooks or status polling
+
+### Via Invoice Model
+
+```php
+$invoice = Invoice::findOrFail($invoiceId);
+
+// Generate crypto payment address
+$paymentResponse = $invoice->pay('btc');
+
+echo $paymentResponse->pay_address;  // BTC deposit address
+echo $paymentResponse->pay_amount;   // Amount in BTC
+echo $paymentResponse->payment_id;   // NOWPayments payment ID
+```
+
+### Via CheckoutService
+
+```php
+use SerenityTechnologies\CashierNowPayments\Facades\Checkout;
+
+$invoice = Invoice::findOrFail($invoiceId);
+
+$payment = Checkout::payInvoice($invoice, 'btc');
+
+echo $payment->getPayAddress();    // BTC deposit address
+echo $payment->getPayAmount();     // Amount in BTC
+echo $payment->getQrCodeUri();     // crypto:bc1q...?amount=0.00123
+```
+
+### Via Billable Trait Helper
+
+```php
+// Generate URL to pay an existing invoice
+$url = $user->payInvoiceUrl($invoice, [
+    'success_url' => route('payment.success'),
+    'cancel_url' => route('payment.cancel'),
+]);
+
+// Or via direct route
+return redirect()->route('cashier-nowpayments.checkout', [
+    'amount' => $invoice->amount,
+    'currency' => $invoice->currency,
+    'invoice_id' => $invoice->id,
+    'type' => 'invoice_payment',
+    'description' => $invoice->order_description,
+]);
+```
+
+### Via API Endpoint
+
+```
+POST /cashier-nowpayments/checkout/invoice/{invoiceId}/pay
+
+{
+    "pay_currency": "btc",
+    "payout_address": "bc1q..."  // optional, for refunds
+}
+```
+
+Response:
+```json
+{
+    "success": true,
+    "payment_id": "12345",
+    "purchase_id": "67890",
+    "pay_address": "bc1qxy2...",
+    "pay_amount": "0.00123",
+    "pay_currency": "btc",
+    "price_amount": "49.99",
+    "price_currency": "usd",
+    "qr_code": "crypto:bc1qxy2...?amount=0.00123",
+    "local_payment_id": 123,
+    "timeout_seconds": 900
+}
+```
+
+### Via JavaScript Module
+
+```javascript
+import { CashierCheckout } from './cashier-checkout';
+
+// First create an invoice
+const invoice = await CashierCheckout.createInvoice({
+    amount: 49.99,
+    currency: 'usd',
+    description: 'Order #123',
+    success_url: 'https://yoursite.com/success',
+    cancel_url: 'https://yoursite.com/cancel',
+});
+
+// Then pay it with selected crypto
+const payment = await CashierCheckout.payInvoice(invoice.invoice_id, {
+    pay_currency: 'btc',
+});
+
+console.log(payment.pay_address);  // BTC address
+console.log(payment.pay_amount);   // Amount in BTC
+console.log(payment.qr_code);      // QR code URI
+```
+
+### Invoice Payment URL Helper
+
+Add the `payInvoiceUrl()` method to your billable model via the `Billable` trait:
+
+```php
+// In a controller
+public function payInvoice(Invoice $invoice)
+{
+    return redirect($invoice->payInvoiceUrl());
+}
+
+// Or in Blade
+<a href="{{ $user->payInvoiceUrl($invoice) }}">
+    Pay Invoice #{{ $invoice->order_id }}
+</a>
+```
+
+### Validation
+
+The invoice payment endpoint validates:
+- Invoice exists and is active (`status = 'active'`)
+- Amount meets minimum payment requirement for selected crypto
+- Ownership verification (if user is authenticated)
+
+Returns appropriate error responses:
+- `404` — Invoice not found
+- `403` — Access denied (ownership mismatch)
+- `422` — Invoice not active or amount below minimum
+
+---
+
 ## Invoice Webhook Handling
 
 When a payment event occurs on NOWPayments, an IPN (Instant Payment Notification) is sent to the configured webhook URL. The `WebhookController` processes it as follows.

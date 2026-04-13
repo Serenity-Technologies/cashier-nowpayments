@@ -11,6 +11,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Http\RedirectResponse;
+use SerenityTechnologies\NowPayments\DTOs\Response\PaymentResponse;
+use SerenityTechnologies\NowPayments\Facades\NowPayments;
 
 /**
  * Represents an invoice generated via NOWPayments.
@@ -156,6 +158,34 @@ class Invoice extends Model
     public function redirect(): RedirectResponse
     {
         return redirect($this->invoice_url);
+    }
+
+    /**
+     * Create a payment for this invoice.
+     *
+     * Uses NOWPayments' createInvoicePayment API to generate a
+     * crypto payment address for the given invoice.
+     *
+     * @param string $payCurrency The cryptocurrency to pay with (e.g., 'btc', 'eth')
+     * @param string|null $payoutAddress Optional payout address for refunds
+     * @return PaymentResponse
+     * @throws \SerenityTechnologies\NowPayments\Exceptions\NowPaymentsException
+     */
+    public function pay(string $payCurrency, ?string $payoutAddress = null): PaymentResponse
+    {
+        if ($this->nowpayments_invoice_id === null) {
+            throw new \InvalidArgumentException('Cannot pay invoice: missing NOWPayments invoice ID.');
+        }
+
+        $request = new \SerenityTechnologies\NowPayments\DTOs\Request\InvoicePaymentRequest(
+            iid: $this->nowpayments_invoice_id,
+            payCurrency: $payCurrency,
+            orderDescription: $this->order_description,
+            customerEmail: $this->customer->email,
+            payoutAddress: $payoutAddress,
+        );
+
+        return NowPayments::createInvoicePayment($request);
     }
 
     /**
