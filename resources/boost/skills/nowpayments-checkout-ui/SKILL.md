@@ -288,6 +288,21 @@ await CashierCheckout.createPayment({
     cancel_url: 'https://...',
 });
 
+// Create hosted invoice
+const invoice = await CashierCheckout.createInvoice({
+    amount: 49.99,
+    currency: 'usd',
+    description: 'Invoice #INV-123',
+    success_url: 'https://...',
+    cancel_url: 'https://...',
+});
+
+// Pay an existing invoice with selected crypto
+const payment = await CashierCheckout.payInvoice(invoice.invoice_id, {
+    pay_currency: 'btc',
+});
+// Returns: { pay_address, pay_amount, pay_currency, qr_code, ... }
+
 // Get crypto estimate
 await CashierCheckout.getEstimate(49.99, 'usd', 'btc');
 

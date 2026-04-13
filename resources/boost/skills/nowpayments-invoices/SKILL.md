@@ -122,22 +122,89 @@ public function createInvoice(Request $request)
 
 ## Paying Existing Invoices
 
-Create a payment against an existing invoice:
+Create a payment against an existing invoice using NOWPayments' `createInvoicePayment` API. This generates a crypto deposit address and QR code for the invoice.
+
+### Via Invoice Model (Recommended)
 
 ```php
-$payment = $user->payInvoice($invoice, 'btc');
+$invoice = Invoice::findOrFail($invoiceId);
 
-// Access payment details
-$payment->pay_address;   // BTC deposit address
-$payment->pay_amount;    // Amount in BTC
-$payment->pay_currency;  // 'btc'
+// Generate crypto payment address
+$paymentResponse = $invoice->pay('btc');
+
+echo $paymentResponse->pay_address;  // BTC deposit address
+echo $paymentResponse->pay_amount;   // Amount in BTC
+echo $paymentResponse->payment_id;   // NOWPayments payment ID
 ```
 
-Or via the Invoice model:
+### Via Billable Trait
 
 ```php
-$payment = $invoice->pay('btc');
+$payment = $user->payInvoice($invoice, 'btc', 'bc1q...'); // optional payout address for refunds
 ```
+
+### Via CheckoutService
+
+```php
+use SerenityTechnologies\CashierNowPayments\Facades\Checkout;
+
+$invoice = Invoice::findOrFail($invoiceId);
+$payment = Checkout::payInvoice($invoice, 'btc');
+
+echo $payment->getPayAddress();    // BTC deposit address
+echo $payment->getPayAmount();     // Amount in BTC
+echo $payment->getQrCodeUri();     // crypto:bc1q...?amount=0.00123
+```
+
+### Via API Endpoint
+
+```
+POST /cashier-nowpayments/checkout/invoice/{invoiceId}/pay
+
+{
+    "pay_currency": "btc",
+    "payout_address": "bc1q..."  // optional, for refunds
+}
+```
+
+### Via JavaScript
+
+```javascript
+import { CashierCheckout } from './cashier-checkout';
+
+const payment = await CashierCheckout.payInvoice(invoiceId, {
+    pay_currency: 'btc',
+});
+
+console.log(payment.pay_address);  // BTC address
+console.log(payment.qr_code);      // QR code URI
+```
+
+### Via URL Helper
+
+```php
+// Generate URL to pay an existing invoice
+$url = $user->payInvoiceUrl($invoice, [
+    'success_url' => route('payment.success'),
+    'cancel_url' => route('payment.cancel'),
+]);
+```
+
+### Flow
+
+1. Create invoice (via `InvoiceBuilder`, `CheckoutService::createInvoice()`, or API)
+2. Customer selects cryptocurrency to pay with
+3. Call `payInvoice()` to generate deposit address + QR code
+4. Display payment details (address, amount, QR code) to customer
+5. Monitor payment status via webhooks or polling
+
+### Validation
+
+- Invoice must exist and be active (`status = 'active'`)
+- Amount must meet minimum payment requirement for selected crypto
+- Ownership verified if user is authenticated
+
+Returns: `404` (not found), `403` (access denied), `422` (not active/below minimum)
 
 ## Invoice Model
 

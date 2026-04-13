@@ -244,6 +244,41 @@ Create a hosted invoice on NOWPayments.
 
 ---
 
+#### `payInvoice(Invoice $invoice, string $payCurrency, array $options = []): PaymentResult`
+
+Create a crypto payment for an existing invoice using NOWPayments' `createInvoicePayment` API.
+
+**Flow:**
+1. Create invoice (via `createInvoice()` or `InvoiceBuilder`)
+2. Customer selects cryptocurrency to pay with
+3. Call `payInvoice()` to generate deposit address + QR code
+4. Display payment details to customer
+5. Monitor payment status via webhooks or polling
+
+**Options:**
+- `payout_address` (string|null) - Address for refunds
+- `metadata` (array) - Additional metadata
+
+**Returns:** `PaymentResult` with deposit address, QR code, and payment details
+
+**Throws:** `CheckoutException` if invoice is not active or amount is below minimum
+
+**Example:**
+```php
+$invoice = Invoice::findOrFail($invoiceId);
+
+$payment = Checkout::payInvoice($invoice, 'btc', [
+    'payout_address' => 'bc1q...',
+    'metadata' => ['custom_key' => 'value'],
+]);
+
+echo $payment->getPayAddress();  // BTC deposit address
+echo $payment->getPayAmount();   // Amount in BTC
+echo $payment->getQrCodeUri();   // crypto:bc1q...?amount=0.00123
+```
+
+---
+
 #### `completeCheckout(PaymentResult $paymentResult, Customer $customer, ?Model $billable = null): Payment`
 
 Persist payment to database and fire `PaymentCreated` event.
@@ -443,6 +478,37 @@ class PaymentController extends Controller
             return redirect($invoiceResult->getInvoiceUrl());
         } catch (CheckoutException $e) {
             return redirect()->back()->with('error', $e->getMessage());
+        }
+    }
+
+    /**
+     * Create a crypto payment for an existing invoice.
+     */
+    public function payInvoice(string $invoiceId, Request $request)
+    {
+        $validated = $request->validate([
+            'pay_currency' => 'required|string',
+        ]);
+
+        try {
+            $invoice = \SerenityTechnologies\CashierNowPayments\Models\Invoice::findOrFail($invoiceId);
+
+            $paymentResult = Checkout::payInvoice($invoice, $validated['pay_currency']);
+
+            return response()->json([
+                'success' => true,
+                'payment' => $paymentResult->toArray(),
+            ]);
+        } catch (CheckoutException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], $e->getCode() ?: 500);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invoice not found.',
+            ], 404);
         }
     }
 }

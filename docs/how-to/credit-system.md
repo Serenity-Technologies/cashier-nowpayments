@@ -282,7 +282,7 @@ DB::transaction(function () use ($customer, $chargeAmount) {
 
     if (bccomp($result['remaining'], '0', 8) > 0) {
         // Charge the remaining amount via NOWPayments
-        $user->charge((float) $result['remaining'], 'usd');
+        $user->newPayment((float) $result['remaining'], 'usd');
     }
 });
 ```
@@ -381,7 +381,7 @@ The `PaymentBuilder` provides a `withCredits()` method that automatically consum
 ### Basic Usage
 
 ```php
-$payment = $user->charge(50.00, 'usd')
+$payment = $user->newPayment(50.00, 'usd')
     ->withCredits(true)
     ->charge();
 ```
@@ -403,7 +403,7 @@ $payment = $user->charge(50.00, 'usd')
 
 ```php
 // Customer has $15.00 in credits
-$payment = $user->charge(50.00, 'usd')
+$payment = $user->newPayment(50.00, 'usd')
     ->withCredits(true)
     ->withDescription('Premium plan charge')
     ->charge();
@@ -421,7 +421,7 @@ $payment = $user->charge(50.00, 'usd')
 
 ```php
 // Customer has $60.00 in credits
-$payment = $user->charge(50.00, 'usd')
+$payment = $user->newPayment(50.00, 'usd')
     ->withCredits(true)
     ->withDescription('Order #12345')
     ->charge();
@@ -438,7 +438,7 @@ $payment = $user->charge(50.00, 'usd')
 
 ```php
 // Customer has no credits or credits are expired
-$payment = $user->charge(50.00, 'usd')
+$payment = $user->newPayment(50.00, 'usd')
     ->withCredits(true)
     ->charge();
 
@@ -453,14 +453,14 @@ You can combine `creditBalance()` with `withCredits()` for conditional logic:
 $balance = $customer->creditBalance();
 
 if (bccomp($balance, '0', 8) > 0) {
-    $payment = $user->charge(50.00, 'usd')
+    $payment = $user->newPayment(50.00, 'usd')
         ->withCredits(true)
         ->withDescription("Using {$balance} in credits")
         ->charge();
 
     echo "Charged {$payment->metadata['credits_applied']} from credits.";
 } else {
-    $payment = $user->charge(50.00, 'usd')
+    $payment = $user->newPayment(50.00, 'usd')
         ->withDescription('No credits available')
         ->charge();
 }
@@ -748,7 +748,7 @@ if (bccomp($balance, '0', 8) > 0) {
     echo "Available credits: {$balance}\n";
 
     // Let PaymentBuilder handle it automatically
-    $payment = $user->charge($chargeAmount, 'usd')
+    $payment = $user->newPayment($chargeAmount, 'usd')
         ->withCredits(true)
         ->withDescription('Order #ORD-12345')
         ->charge();
@@ -762,7 +762,7 @@ if (bccomp($balance, '0', 8) > 0) {
     echo "Amount charged via NOWPayments: {$charged}\n";
 } else {
     echo "No credits available. Full charge: {$chargeAmount}\n";
-    $user->charge($chargeAmount, 'usd')->charge();
+    $user->newPayment($chargeAmount, 'usd')->charge();
 }
 ```
 
@@ -924,7 +924,7 @@ public function processOrder(User $user, float $amount): array
         // Step 4: Charge remaining via NOWPayments (if any)
         $payment = null;
         if (bccomp($creditResult['remaining'], '0', 8) > 0) {
-            $payment = $user->charge((float) $creditResult['remaining'], 'usd')
+            $payment = $user->newPayment((float) $creditResult['remaining'], 'usd')
                 ->withDescription("Order charge ({$creditResult['covered']} covered by credits)")
                 ->charge();
         }

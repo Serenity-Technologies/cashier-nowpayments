@@ -93,7 +93,7 @@ public function it_can_begin_payment_charge(): void
     $user->name = 'Test User';
     $user->save();
 
-    $builder = $user->charge(100.00, 'usd');
+    $builder = $user->newPayment(100.00, 'usd');
 
     $this->assertInstanceOf(PaymentBuilder::class, $builder);
 }
@@ -219,7 +219,7 @@ public function it_creates_payment_via_nowpayments_api(): void
 
     $customer = $user->createOrGetCustomer();
 
-    $payment = $user->charge(100.00, 'usd')
+    $payment = $user->newPayment(100.00, 'usd')
         ->withDescription('Test payment')
         ->withOrderId('ORDER-123')
         ->charge();
@@ -1699,10 +1699,10 @@ Call `withCredits()` on the builder chain before `charge()`:
 
 ```php
 // WRONG — credits are NOT applied
-$payment = $user->charge(100.00, 'usd')->charge();
+$payment = $user->newPayment(100.00, 'usd')->charge();
 
 // CORRECT — credits will be consumed in FIFO order
-$payment = $user->charge(100.00, 'usd')
+$payment = $user->newPayment(100.00, 'usd')
     ->withCredits()
     ->charge();
 ```
@@ -1759,7 +1759,7 @@ use Illuminate\Support\Facades\DB;
 DB::enableQueryLog();
 
 // Run your operation
-$payment = $user->charge(100.00, 'usd')->charge();
+$payment = $user->newPayment(100.00, 'usd')->charge();
 
 // Inspect queries
 $queries = DB::getQueryLog();

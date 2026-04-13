@@ -99,10 +99,10 @@ return redirect($url);
 
 ### Option 3: Direct Payment (PaymentBuilder)
 
-Use the fluent `PaymentBuilder` via `$user->charge()`:
+Use the fluent `PaymentBuilder` via `$user->newPayment()`:
 
 ```php
-$payment = $user->charge(49.99, 'usd')
+$payment = $user->newPayment(49.99, 'usd')
     ->withPayCurrency('btc')
     ->withDescription('Premium ebook')
     ->withOrderId('ORDER-123')

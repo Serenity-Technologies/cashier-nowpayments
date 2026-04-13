@@ -81,7 +81,7 @@ Create a payment using the fluent `PaymentBuilder`:
 
 @verbatim
 <code-snippet name="Create One-Time Payment" lang="php">
-$payment = $user->charge(49.99, 'usd')
+$payment = $user->newPayment(49.99, 'usd')
     ->withPayCurrency('btc')
     ->withDescription('Premium ebook')
     ->withOrderId('ORDER-123')
@@ -210,7 +210,7 @@ Credits are created automatically during plan swaps (proration) or manually. The
 <code-snippet name="Apply Credits" lang="php">
 $balance = $customer->creditBalance();  // Returns string (bcmath)
 
-$payment = $user->charge(49.99, 'usd')
+$payment = $user->newPayment(49.99, 'usd')
     ->withCredits()  // Consumes credits before charging
     ->charge();
 </code-snipet>

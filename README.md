@@ -133,7 +133,7 @@ class User extends Authenticatable
 
 ```php
 // Fluent builder — creates on NOWPayments + persists locally
-$payment = $user->charge(49.99, 'usd')
+$payment = $user->newPayment(49.99, 'usd')
     ->withPayCurrency('btc')
     ->withDescription('Premium ebook')
     ->withOrderId('ORDER-123')
