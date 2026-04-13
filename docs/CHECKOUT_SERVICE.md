@@ -12,7 +12,7 @@ CheckoutService
     ├── EstimateResult       # Currency conversion estimates
     ├── ValidationResult     # Amount validation results
     ├── PaymentResult        # Direct payment creation results
-    ├── InvoiceResult        # Hosted invoice creation results
+    ├── InvoiceResponse        # Hosted invoice creation results
     ├── CheckoutException    # Custom exception with factory methods
     └── Facade: Checkout     # Static access convenience
 ```
@@ -90,7 +90,7 @@ $invoiceResult = Checkout::createInvoice(49.99, 'usd', [
 ]);
 
 // Redirect customer to invoice page
-return redirect($invoiceResult->getInvoiceUrl());
+return redirect($invoiceResult->invoice_url);
 
 // After payment, customer is redirected to success_url
 // Webhook will notify your application of payment status
@@ -232,7 +232,7 @@ Create a direct payment on NOWPayments.
 
 ---
 
-#### `createInvoice(float $amount, string $currency, array $options = []): InvoiceResult`
+#### `createInvoice(float $amount, string $currency, array $options = []): InvoiceResponse`
 
 Create a hosted invoice on NOWPayments.
 
@@ -240,7 +240,7 @@ Create a hosted invoice on NOWPayments.
 - All session options plus:
 - `partially_paid_url` (string|null) - Redirect for partial payments
 
-**Returns:** `InvoiceResult` with invoice URL for redirect
+**Returns:** `InvoiceResponse` with invoice URL for redirect
 
 ---
 
@@ -353,21 +353,21 @@ Generate a QR code URI in `crypto:` format.
 
 ---
 
-### InvoiceResult Methods
+### InvoiceReponse Methods
 
-| Method | Return Type | Description |
-|--------|-------------|-------------|
-| `getInvoiceId()` | `string` | NOWPayments invoice ID |
-| `getInvoiceUrl()` | `string` | Hosted invoice URL |
-| `getOrderId()` | `string` | Order reference ID |
-| `getDescription()` | `string\|null` | Invoice description |
-| `getAmount()` | `float` | Invoice amount |
-| `getCurrency()` | `string` | Currency code |
-| `getSuccessUrl()` | `string` | Success redirect URL |
-| `getCancelUrl()` | `string` | Cancel redirect URL |
-| `getExpiresAt()` | `string\|null` | Expiration time (ISO 8601) |
-| `isExpired()` | `bool` | Whether invoice has expired |
-| `toArray()` | `array` | All invoice data |
+| Method        | Return Type | Description |
+|---------------|-------------|-------------|
+| `invoice_id`  | `string` | NOWPayments invoice ID |
+| `invoice_url` | `string` | Hosted invoice URL |
+| `order_id`    | `string` | Order reference ID |
+| `description` | `string\|null` | Invoice description |
+| `amount`      | `float` | Invoice amount |
+| `currency`    | `string` | Currency code |
+| `success_url` | `string` | Success redirect URL |
+| `cancel_url`  | `string` | Cancel redirect URL |
+| `expires_at`  | `string\|null` | Expiration time (ISO 8601) |
+| `is_expired`  | `bool` | Whether invoice has expired |
+| `toArray()`   | `array` | All invoice data |
 
 ---
 
@@ -475,7 +475,7 @@ class PaymentController extends Controller
                 ]
             );
 
-            return redirect($invoiceResult->getInvoiceUrl());
+            return redirect($invoiceResult->invoice_url);
         } catch (CheckoutException $e) {
             return redirect()->back()->with('error', $e->getMessage());
         }

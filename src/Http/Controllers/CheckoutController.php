@@ -20,6 +20,8 @@ use SerenityTechnologies\NowPayments\Facades\NowPayments;
 
 class CheckoutController extends Controller
 {
+    use FormatsJsonResponses;
+
     /**
      * Maximum number of retries for transient NOWPayments API failures.
      */
@@ -262,10 +264,7 @@ class CheckoutController extends Controller
         } catch (\Exception $e) {
             report($e);
 
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to create payment. Please try again.',
-            ], 500);
+            return $this->errorResponse('Failed to create payment. Please try again.');
         }
     }
 
@@ -315,10 +314,7 @@ class CheckoutController extends Controller
             report($e);
 
             if ($request->expectsJson()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Failed to create invoice.',
-                ], 500);
+                return $this->errorResponse('Failed to create invoice.');
             }
 
             return redirect()->back()->with('error', 'Failed to create invoice.');
@@ -502,10 +498,7 @@ class CheckoutController extends Controller
             report($e);
 
             if ($request->expectsJson()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Failed to create subscription.',
-                ], 500);
+                return $this->errorResponse('Failed to create subscription.');
             }
 
             return redirect()->back()->with('error', 'Failed to create subscription.');
@@ -572,10 +565,7 @@ class CheckoutController extends Controller
         } catch (\Exception $e) {
             report($e);
 
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to load currencies: ' . $e->getMessage(),
-            ], 500);
+            return $this->errorResponse('Failed to load currencies: ' . $e->getMessage());
         }
     }
 
@@ -643,10 +633,7 @@ class CheckoutController extends Controller
                 'fee' => $estimate->fee_estimated ?? null,
             ]);
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to get estimate.',
-            ], 500);
+            return $this->errorResponse('Failed to get estimate.');
         }
     }
 
