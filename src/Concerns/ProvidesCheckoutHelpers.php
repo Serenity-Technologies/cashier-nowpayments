@@ -88,4 +88,30 @@ HTML;
 
         return route('cashier-nowpayments.checkout.embedded') . '?' . $params;
     }
+
+    /**
+     * Generate a URL to pay an existing invoice using the NOWPayments widget.
+     *
+     * Opens the checkout overlay with the embedded payment widget rendered
+     * directly. The widget handles currency selection, QR codes, and payment tracking.
+     *
+     * @param \SerenityTechnologies\CashierNowPayments\Models\Invoice $invoice
+     * @param array $options
+     * @return string
+     */
+    public function payInvoiceUrl(\SerenityTechnologies\CashierNowPayments\Models\Invoice $invoice, array $options = []): string
+    {
+        $params = http_build_query(array_merge([
+            'amount' => $invoice->amount,
+            'currency' => $invoice->currency,
+            'type' => 'invoice_payment',
+            'invoice_id' => $invoice->nowpayments_invoice_id ?? $invoice->id,
+            'description' => $invoice->order_description ?? "Invoice #{$invoice->order_id}",
+            'order_id' => $invoice->order_id,
+            'success_url' => $invoice->success_url ?? config('app.url'),
+            'cancel_url' => $invoice->cancel_url ?? config('app.url'),
+        ], $options));
+
+        return route('cashier-nowpayments.checkout') . '?' . $params;
+    }
 }
