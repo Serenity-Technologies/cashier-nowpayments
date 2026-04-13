@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace SerenityTechnologies\CashierNowPayments\Models;
 
+use SerenityTechnologies\CashierNowPayments\Concerns\HasNowPaymentsTable;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -37,6 +38,12 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class SubscriptionItem extends Model
 {
     use HasFactory, HasUlids;
+    use HasNowPaymentsTable;
+
+    /**
+     * Table suffix for the config-based prefix.
+     */
+    protected string $nowPaymentsTable = 'subscription_items';
 
     /**
      * The attributes that are mass assignable.
@@ -44,17 +51,6 @@ class SubscriptionItem extends Model
      * @var array<int, string>
      */
     protected $guarded = [];
-
-    /**
-     * Get the table name for the model.
-     *
-     * @return string The fully qualified table name with configured prefix
-     */
-    public function getTable(): string
-    {
-        $prefix = config('cashier-nowpayments.prefix', 'cashier_nowpayments_');
-        return $prefix . 'subscription_items';
-    }
 
     /**
      * Get the subscription that owns the item.
