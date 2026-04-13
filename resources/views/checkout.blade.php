@@ -175,6 +175,44 @@
             </div>
         </div>
 
+        <!-- Invoice Payment Widget (for invoice_payment type) -->
+        @if($checkoutData['type'] === 'invoice_payment' && !empty($checkoutData['widget_url']))
+        <div id="invoiceWidgetContainer" class="p-6">
+            <!-- Loading State -->
+            <div id="widgetLoading" class="text-center py-8">
+                <div class="spinner mx-auto mb-4"></div>
+                <p class="text-gray-600">{{ __('Loading payment widget...') }}</p>
+            </div>
+
+            <!-- Widget Iframe -->
+            <div id="widgetFrame" class="hidden">
+                <iframe
+                    id="nowpaymentsWidget"
+                    src="{{ $checkoutData['widget_url'] }}"
+                    width="410"
+                    height="696"
+                    frameborder="0"
+                    scrolling="no"
+                    style="overflow-y: hidden; width: 100%; border: none;"
+                    onload="onWidgetLoad()"
+                    onerror="onWidgetError()"
+                >
+                    {{ __("Can't load widget") }}
+                </iframe>
+            </div>
+
+            <!-- Error State -->
+            <div id="widgetError" class="hidden text-center py-8">
+                <svg class="w-12 h-12 text-red-500 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                <p class="text-gray-600 mb-4">{{ __('Failed to load payment widget') }}</p>
+                <button onclick="retryWidget()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
+                    {{ __('Try Again') }}
+                </button>
+            </div>
+        </div>
+        @else
         <!-- Checkout Form -->
         <div id="checkoutForm" class="p-6">
             <!-- Amount Display -->
@@ -337,6 +375,7 @@
                 </button>
             </div>
         </div>
+        @endif
     </div>
 </div>
 
@@ -352,10 +391,155 @@ let timeRemaining = CheckoutConfig.timeout_seconds ?? 900;
 let qrCodeInstance = null;
 let allCurrencies = [];
 
+// Determine if this is an invoice payment
+const isInvoicePayment = CheckoutConfig.type === 'invoice_payment';
+const invoiceId = CheckoutConfig.invoice_id ?? null;
+
 // Initialize
 document.addEventListener('DOMContentLoaded', function() {
-    loadCurrencies();
+    if (isInvoicePayment) {
+        // Invoice payment flow - widget handles everything
+        setupWidgetListeners();
+    } else {
+        // Regular payment flow - custom checkout
+        loadCurrencies();
+    }
 });
+
+// ====== Invoice Payment Widget Handlers ======
+
+// Called when widget iframe finishes loading
+function onWidgetLoad() {
+    document.getElementById('widgetLoading').classList.add('hidden');
+    document.getElementById('widgetFrame').classList.remove('hidden');
+}
+
+// Called when widget iframe fails to load
+function onWidgetError() {
+    document.getElementById('widgetLoading').classList.add('hidden');
+    document.getElementById('widgetError').classList.remove('hidden');
+}
+
+// Retry loading the widget
+function retryWidget() {
+    document.getElementById('widgetError').classList.add('hidden');
+    document.getElementById('widgetLoading').classList.remove('hidden');
+    
+    const iframe = document.getElementById('nowpaymentsWidget');
+    iframe.src = iframe.src;
+}
+
+// Setup listeners for widget postMessage events
+function setupWidgetListeners() {
+    window.addEventListener('message', function(event) {
+        try {
+            const data = event.data;
+            
+            if (!data || typeof data !== 'object') return;
+            
+            // Widget loaded successfully
+            if (data.type === 'iframe_loaded') {
+                onWidgetLoad();
+                return;
+            }
+            
+            // Payment completed - widget sends this when payment is successful
+            if (data.type === 'payment-success' || data.type === 'payment_completed') {
+                handleWidgetSuccess();
+                return;
+            }
+            
+            // Payment failed
+            if (data.type === 'payment-failed' || data.type === 'payment_failed') {
+                handleWidgetError();
+                return;
+            }
+            
+            // User closed/cancelled
+            if (data.type === 'checkout-close' || data.type === 'user_cancelled') {
+                handleWidgetCancel();
+                return;
+            }
+        } catch (e) {
+            // Ignore cross-origin errors
+        }
+    });
+    
+    // Fallback: Poll for payment status if widget doesn't send postMessage
+    if (invoiceId) {
+        startInvoiceStatusPolling();
+    }
+}
+
+// Handle successful payment from widget
+function handleWidgetSuccess() {
+    // Show success state
+    document.getElementById('invoiceWidgetContainer')?.classList.add('hidden');
+    
+    // Update header
+    const header = document.querySelector('.bg-gradient-to-r');
+    if (header) {
+        header.innerHTML = `
+            <div class="flex justify-between items-center">
+                <h2 class="text-2xl font-bold text-white">{{ __('Payment Successful!') }}</h2>
+            </div>
+        `;
+    }
+    
+    // Show success message
+    const container = document.getElementById('invoiceWidgetContainer')?.parentElement;
+    if (container) {
+        container.innerHTML = `
+            <div class="p-6 text-center">
+                <div class="inline-block p-6 bg-green-100 rounded-full mb-6">
+                    <svg class="w-16 h-16 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                </div>
+                <h3 class="text-2xl font-bold text-gray-900 mb-2">{{ __('Payment Successful!') }}</h3>
+                <p class="text-gray-600 mb-6">{{ __('Your payment has been received. Redirecting you...') }}</p>
+            </div>
+        `;
+    }
+    
+    // Notify parent and redirect
+    notifyParent('cashier-checkout-complete');
+    
+    setTimeout(() => {
+        window.location.href = CheckoutConfig.success_url;
+    }, 3000);
+}
+
+// Handle payment error from widget
+function handleWidgetError() {
+    document.getElementById('widgetLoading')?.classList.add('hidden');
+    document.getElementById('widgetFrame')?.classList.add('hidden');
+    document.getElementById('widgetError').classList.remove('hidden');
+    
+    notifyParent('cashier-checkout-error');
+}
+
+// Handle widget cancel/close
+function handleWidgetCancel() {
+    notifyParent('cashier-checkout-cancel');
+    window.location.href = CheckoutConfig.cancel_url;
+}
+
+// Poll invoice status as fallback for detecting payment completion
+function startInvoiceStatusPolling() {
+    // This polls the payment status endpoint to detect when payment completes
+    // Only used if widget doesn't send postMessage events
+    statusCheckInterval = setInterval(async () => {
+        try {
+            // You can implement status checking here if needed
+            // For now, we rely on the widget's postMessage events
+        } catch (error) {
+            console.error('Status check failed:', error);
+        }
+    }, 5000);
+}
+
+// ====== Regular Payment Flow Handlers ======
 
 // Load supported currencies
 async function loadCurrencies() {
@@ -502,25 +686,43 @@ async function createPayment() {
     payButton.innerHTML = '<div class="spinner" style="width: 20px; height: 20px; border-width: 2px; display: inline-block; vertical-align: middle;"></div> Processing...';
 
     try {
-        const response = await fetch('{{ route('cashier-nowpayments.checkout.payment') }}', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json',
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
-            },
-            body: JSON.stringify({
-                amount: CheckoutConfig.amount,
-                currency: CheckoutConfig.currency,
-                pay_currency: selectedCurrency,
-                description: CheckoutConfig.description,
-                order_id: CheckoutConfig.order_id,
-                success_url: CheckoutConfig.success_url,
-                cancel_url: CheckoutConfig.cancel_url
-            })
-        });
+        let response, data;
 
-        const data = await response.json();
+        // Handle invoice payment flow
+        if (isInvoicePayment && invoiceId) {
+            response = await fetch(`{{ route('cashier-nowpayments.checkout.invoice.pay', ['invoiceId' => 'INVOICE_ID']) }}`.replace('INVOICE_ID', invoiceId), {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
+                },
+                body: JSON.stringify({
+                    pay_currency: selectedCurrency,
+                })
+            });
+        } else {
+            // Handle direct payment flow
+            response = await fetch('{{ route('cashier-nowpayments.checkout.payment') }}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
+                },
+                body: JSON.stringify({
+                    amount: CheckoutConfig.amount,
+                    currency: CheckoutConfig.currency,
+                    pay_currency: selectedCurrency,
+                    description: CheckoutConfig.description,
+                    order_id: CheckoutConfig.order_id,
+                    success_url: CheckoutConfig.success_url,
+                    cancel_url: CheckoutConfig.cancel_url
+                })
+            });
+        }
+
+        data = await response.json();
 
         if (data.success) {
             currentPayment = data;

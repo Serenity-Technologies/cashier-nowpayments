@@ -134,6 +134,56 @@ class CashierCheckout {
     }
 
     /**
+     * Open invoice payment widget modal.
+     *
+     * Renders the NOWPayments payment widget directly for an existing invoice.
+     * The widget handles currency selection, QR code display, and payment tracking.
+     *
+     * @param {Object} options
+     * @param {number} options.amount - Payment amount
+     * @param {string} options.currency - Currency code (e.g., 'usd')
+     * @param {string} options.invoice_id - NOWPayments invoice ID
+     * @param {string} [options.description] - Payment description
+     * @param {string} [options.success_url] - Success redirect URL
+     * @param {string} [options.cancel_url] - Cancel redirect URL
+     * @returns {Promise<Object>} Payment result
+     */
+    static async openInvoicePayment(options) {
+        const params = new URLSearchParams({
+            amount: options.amount,
+            currency: options.currency,
+            type: 'invoice_payment',
+            invoice_id: options.invoice_id,
+        });
+
+        if (options.description) params.set('description', options.description);
+        if (options.success_url) params.set('success_url', options.success_url);
+        if (options.cancel_url) params.set('cancel_url', options.cancel_url);
+
+        return new Promise((resolve, reject) => {
+            const modal = this.createEmbeddedModal();
+            const iframe = modal.querySelector('iframe');
+
+            iframe.src = `/cashier-nowpayments/checkout?${params.toString()}`;
+
+            // Listen for messages from iframe
+            const handler = (event) => {
+                if (event.data.type === 'cashier-checkout-complete') {
+                    window.removeEventListener('message', handler);
+                    this.closeModal(modal);
+                    resolve(event.data.payload);
+                } else if (event.data.type === 'cashier-checkout-cancel') {
+                    window.removeEventListener('message', handler);
+                    this.closeModal(modal);
+                    reject(new Error('Checkout cancelled'));
+                }
+            };
+
+            window.addEventListener('message', handler);
+        });
+    }
+
+    /**
      * Create a payment directly via API.
      *
      * @param {Object} options
@@ -160,6 +210,31 @@ class CashierCheckout {
      */
     static async createInvoice(options) {
         const response = await fetch('/cashier-nowpayments/checkout/invoice', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': this.getCSRFToken()
+            },
+            body: JSON.stringify(options)
+        });
+
+        return response.json();
+    }
+
+    /**
+     * Create a payment for an invoice.
+     *
+     * Uses NOWPayments' createInvoicePayment API to generate a crypto
+     * payment address for the given invoice.
+     *
+     * @param {string} invoiceId - The invoice ID
+     * @param {Object} options
+     * @param {string} options.pay_currency - Cryptocurrency to pay with
+     * @param {string} [options.payout_address] - Optional payout address
+     * @returns {Promise<Object>}
+     */
+    static async payInvoice(invoiceId, options) {
+        const response = await fetch(`/cashier-nowpayments/checkout/invoice/${invoiceId}/pay`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
