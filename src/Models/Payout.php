@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
+use SerenityTechnologies\CashierNowPayments\Concerns\{BelongsToCustomer, HasNowPaymentsTable, HasStatusChecks};
 use SerenityTechnologies\NowPayments\DTOs\Request\PayoutVerificationRequest;
 use SerenityTechnologies\NowPayments\Facades\NowPayments;
 
@@ -56,17 +57,29 @@ use SerenityTechnologies\NowPayments\Facades\NowPayments;
 class Payout extends Model
 {
     use HasFactory, HasUlids;
+    use HasNowPaymentsTable;
+    use HasStatusChecks;
+    use BelongsToCustomer;
 
     /**
-     * Get the table name for the model.
-     *
-     * @return string The fully qualified table name with configured prefix
+     * Table suffix for the config-based prefix.
      */
-    public function getTable(): string
-    {
-        $prefix = config('cashier-nowpayments.prefix', 'cashier_nowpayments_');
-        return $prefix . 'payouts';
-    }
+    protected string $nowPaymentsTable = 'payouts';
+
+    /**
+     * Status values considered successful.
+     */
+    protected array $successfulStatuses = ['finished'];
+
+    /**
+     * Status values considered pending.
+     */
+    protected array $pendingStatuses = ['creating', 'waiting', 'processing', 'sending'];
+
+    /**
+     * Status values considered failed.
+     */
+    protected array $failedStatuses = ['failed', 'rejected'];
 
     /**
      * The attributes that are mass assignable.
@@ -87,16 +100,6 @@ class Payout extends Model
     ];
 
     /**
-     * Get the customer that owns the payout.
-     *
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo<Customer, $this>
-     */
-    public function customer(): BelongsTo
-    {
-        return $this->belongsTo($this->getCustomerModel());
-    }
-
-    /**
      * Get the owning billable model.
      *
      * @return \Illuminate\Database\Eloquent\Relations\MorphTo<Model, $this>
@@ -104,39 +107,6 @@ class Payout extends Model
     public function billable(): MorphTo
     {
         return $this->morphTo();
-    }
-
-    /**
-     * Scope a query to only include successful payouts.
-     *
-     * @param \Illuminate\Database\Eloquent\Builder<self> $query
-     * @return void
-     */
-    public function scopeSuccessful($query): void
-    {
-        $query->where('status', 'finished');
-    }
-
-    /**
-     * Scope a query to only include pending payouts.
-     *
-     * @param \Illuminate\Database\Eloquent\Builder<self> $query
-     * @return void
-     */
-    public function scopePending($query): void
-    {
-        $query->whereIn('status', ['creating', 'waiting', 'processing', 'sending']);
-    }
-
-    /**
-     * Scope a query to only include failed payouts.
-     *
-     * @param \Illuminate\Database\Eloquent\Builder<self> $query
-     * @return void
-     */
-    public function scopeFailed($query): void
-    {
-        $query->whereIn('status', ['failed', 'rejected']);
     }
 
     /**
@@ -148,36 +118,6 @@ class Payout extends Model
     public function scopeCancelled($query): void
     {
         $query->where('status', 'cancelled');
-    }
-
-    /**
-     * Determine if the payout is successful.
-     *
-     * @return bool True if status is 'finished'
-     */
-    public function isSuccessful(): bool
-    {
-        return $this->status === 'finished';
-    }
-
-    /**
-     * Determine if the payout is pending.
-     *
-     * @return bool True if status is creating, waiting, processing, or sending
-     */
-    public function isPending(): bool
-    {
-        return in_array($this->status, ['creating', 'waiting', 'processing', 'sending'], true);
-    }
-
-    /**
-     * Determine if the payout has failed.
-     *
-     * @return bool True if status is 'failed' or 'rejected'
-     */
-    public function isFailed(): bool
-    {
-        return in_array($this->status, ['failed', 'rejected'], true);
     }
 
     /**

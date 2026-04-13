@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Http\RedirectResponse;
+use SerenityTechnologies\CashierNowPayments\Concerns\{BelongsToCustomer, HasNowPaymentsTable};
 use SerenityTechnologies\NowPayments\DTOs\Response\PaymentResponse;
 use SerenityTechnologies\NowPayments\Facades\NowPayments;
 
@@ -56,6 +57,13 @@ use SerenityTechnologies\NowPayments\Facades\NowPayments;
 class Invoice extends Model
 {
     use HasFactory, HasUlids;
+    use HasNowPaymentsTable;
+    use BelongsToCustomer;
+
+    /**
+     * Table suffix for the config-based prefix.
+     */
+    protected string $nowPaymentsTable = 'invoices';
 
     /**
      * The attributes that are mass assignable.
@@ -74,27 +82,6 @@ class Invoice extends Model
         'paid_at' => 'datetime',
         'expires_at' => 'datetime',
     ];
-
-    /**
-     * Get the table name for the model.
-     *
-     * @return string The fully qualified table name with configured prefix
-     */
-    public function getTable(): string
-    {
-        $prefix = config('cashier-nowpayments.prefix', 'cashier_nowpayments_');
-        return $prefix . 'invoices';
-    }
-
-    /**
-     * Get the customer that owns the invoice.
-     *
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo<Customer, $this>
-     */
-    public function customer(): BelongsTo
-    {
-        return $this->belongsTo($this->getCustomerModel());
-    }
 
     /**
      * Get the owning billable model.

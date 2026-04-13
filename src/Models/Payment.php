@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
+use SerenityTechnologies\CashierNowPayments\Concerns\{BelongsToCustomer, HasNowPaymentsTable, HasStatusChecks};
 use SerenityTechnologies\CashierNowPayments\Events\PaymentRefunded;
 use SerenityTechnologies\CashierNowPayments\Events\PaymentStatusSynced;
 use SerenityTechnologies\NowPayments\Facades\NowPayments;
@@ -68,18 +69,30 @@ use SerenityTechnologies\NowPayments\Facades\NowPayments;
 class Payment extends Model
 {
     use HasFactory, HasUlids;
-
+    use HasNowPaymentsTable;
+    use HasStatusChecks;
+    use BelongsToCustomer;
 
     /**
-     * Get the table name for the model.
-     *
-     * @return string The fully qualified table name with configured prefix
+     * Table suffix for the config-based prefix.
      */
-    public function getTable(): string
-    {
-        $prefix = config('cashier-nowpayments.prefix', 'cashier_nowpayments_');
-        return $prefix . 'payments';
-    }
+    protected string $nowPaymentsTable = 'payments';
+
+    /**
+     * Status values considered successful.
+     */
+    protected array $successfulStatuses = ['finished'];
+
+    /**
+     * Status values considered pending.
+     */
+    protected array $pendingStatuses = ['waiting', 'confirming', 'confirmed', 'sending', 'partially_paid'];
+
+    /**
+     * Status values considered failed.
+     */
+    protected array $failedStatuses = ['failed', 'expired'];
+
 
     /**
      * The attributes that are mass assignable.
@@ -99,16 +112,6 @@ class Payment extends Model
         'paid_at' => 'datetime',
         'refunded_at' => 'datetime',
     ];
-
-    /**
-     * Get the customer that owns the payment.
-     *
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo<Customer, $this>
-     */
-    public function customer(): BelongsTo
-    {
-        return $this->belongsTo($this->getCustomerModel());
-    }
 
     /**
      * Get the owning billable model.
@@ -131,39 +134,6 @@ class Payment extends Model
     }
 
     /**
-     * Scope a query to only include successful payments.
-     *
-     * @param \Illuminate\Database\Eloquent\Builder<self> $query
-     * @return void
-     */
-    public function scopeSuccessful($query): void
-    {
-        $query->where('status', 'finished');
-    }
-
-    /**
-     * Scope a query to only include pending payments.
-     *
-     * @param \Illuminate\Database\Eloquent\Builder<self> $query
-     * @return void
-     */
-    public function scopePending($query): void
-    {
-        $query->whereIn('status', ['waiting', 'confirming', 'confirmed', 'sending', 'partially_paid']);
-    }
-
-    /**
-     * Scope a query to only include failed payments.
-     *
-     * @param \Illuminate\Database\Eloquent\Builder<self> $query
-     * @return void
-     */
-    public function scopeFailed($query): void
-    {
-        $query->whereIn('status', ['failed', 'expired']);
-    }
-
-    /**
      * Scope a query to only include payments for a subscription.
      *
      * @param \Illuminate\Database\Eloquent\Builder<self> $query
@@ -173,36 +143,6 @@ class Payment extends Model
     public function scopeForSubscription($query, string $subscriptionId): void
     {
         $query->where('subscription_id', $subscriptionId);
-    }
-
-    /**
-     * Determine if the payment is successful.
-     *
-     * @return bool True if status is 'finished'
-     */
-    public function isSuccessful(): bool
-    {
-        return $this->status === 'finished';
-    }
-
-    /**
-     * Determine if the payment is pending.
-     *
-     * @return bool True if status is waiting, confirming, confirmed, sending, or partially_paid
-     */
-    public function isPending(): bool
-    {
-        return in_array($this->status, ['waiting', 'confirming', 'confirmed', 'sending', 'partially_paid'], true);
-    }
-
-    /**
-     * Determine if the payment has failed.
-     *
-     * @return bool True if status is 'failed' or 'expired'
-     */
-    public function isFailed(): bool
-    {
-        return in_array($this->status, ['failed', 'expired'], true);
     }
 
     /**

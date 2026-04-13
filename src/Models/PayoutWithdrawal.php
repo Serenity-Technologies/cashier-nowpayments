@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace SerenityTechnologies\CashierNowPayments\Models;
 
+use SerenityTechnologies\CashierNowPayments\Concerns\{HasNowPaymentsTable, HasStatusChecks};
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -44,17 +45,28 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class PayoutWithdrawal extends Model
 {
     use HasFactory, HasUlids;
+    use HasNowPaymentsTable;
+    use HasStatusChecks;
 
     /**
-     * Get the table name for the model.
-     *
-     * @return string The fully qualified table name with configured prefix
+     * Table suffix for the config-based prefix.
      */
-    public function getTable(): string
-    {
-        $prefix = config('cashier-nowpayments.prefix', 'cashier_nowpayments_');
-        return $prefix . 'payout_withdrawals';
-    }
+    protected string $nowPaymentsTable = 'payout_withdrawals';
+
+    /**
+     * Status values considered successful.
+     */
+    protected array $successfulStatuses = ['finished'];
+
+    /**
+     * Status values considered pending.
+     */
+    protected array $pendingStatuses = ['creating', 'waiting', 'processing', 'sending'];
+
+    /**
+     * Status values considered failed.
+     */
+    protected array $failedStatuses = ['failed', 'rejected'];
 
     /**
      * The attributes that are mass assignable.
@@ -82,36 +94,6 @@ class PayoutWithdrawal extends Model
     public function payout(): BelongsTo
     {
         return $this->belongsTo($this->getPayoutModel());
-    }
-
-    /**
-     * Determine if the withdrawal is successful.
-     *
-     * @return bool True if status is 'finished'
-     */
-    public function isSuccessful(): bool
-    {
-        return $this->status === 'finished';
-    }
-
-    /**
-     * Determine if the withdrawal is pending.
-     *
-     * @return bool True if status is creating, waiting, processing, or sending
-     */
-    public function isPending(): bool
-    {
-        return in_array($this->status, ['creating', 'waiting', 'processing', 'sending'], true);
-    }
-
-    /**
-     * Determine if the withdrawal has failed.
-     *
-     * @return bool True if status is 'failed' or 'rejected'
-     */
-    public function isFailed(): bool
-    {
-        return in_array($this->status, ['failed', 'rejected'], true);
     }
 
     /**
