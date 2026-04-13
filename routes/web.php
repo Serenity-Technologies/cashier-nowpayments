@@ -39,6 +39,11 @@ Route::prefix(config('cashier-nowpayments.routes.prefix', 'cashier-nowpayments')
             ->middleware(['throttle:20,1'])
             ->name('checkout.invoice');
 
+        // Create payment for an invoice
+        Route::post('/checkout/invoice/{invoiceId}/pay', [CheckoutController::class, 'payInvoice'])
+            ->middleware(['throttle:30,1'])
+            ->name('checkout.invoice.pay');
+
         // Create subscription and redirect
         Route::post('/checkout/subscription', [CheckoutController::class, 'createSubscription'])
             ->middleware(['throttle:10,1'])

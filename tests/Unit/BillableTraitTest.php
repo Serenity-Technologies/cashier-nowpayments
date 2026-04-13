@@ -46,7 +46,7 @@ class BillableTraitTest extends TestCase
         $user->name = 'Test User';
         $user->save();
 
-        $builder = $user->charge(100.00, 'usd');
+        $builder = $user->newPayment(100.00, 'usd');
 
         $this->assertInstanceOf(\SerenityTechnologies\CashierNowPayments\PaymentBuilder::class, $builder);
     }
