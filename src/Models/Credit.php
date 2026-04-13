@@ -7,6 +7,7 @@ namespace SerenityTechnologies\CashierNowPayments\Models;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use SerenityTechnologies\CashierNowPayments\Concerns\{BelongsToCustomer, HasNowPaymentsTable};
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 
@@ -51,6 +52,13 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
 class Credit extends Model
 {
     use HasFactory, HasUlids;
+    use HasNowPaymentsTable;
+    use BelongsToCustomer;
+
+    /**
+     * Table suffix for the config-based prefix.
+     */
+    protected string $nowPaymentsTable = 'credits';
 
     /**
      * Indicates if the model should be timestamped.
@@ -58,15 +66,6 @@ class Credit extends Model
      * @var bool
      */
     public $timestamps = true;
-
-    /**
-     * Get the table name for the model.
-     */
-    public function getTable(): string
-    {
-        $prefix = config('cashier-nowpayments.prefix', 'cashier_nowpayments_');
-        return $prefix . 'credits';
-    }
 
     /**
      * The attributes that are mass assignable.
@@ -87,16 +86,6 @@ class Credit extends Model
         'metadata' => 'array',
         'applied_at' => 'datetime',
     ];
-
-    /**
-     * Get the customer that owns the credit.
-     *
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo<Customer, $this>
-     */
-    public function customer(): BelongsTo
-    {
-        return $this->belongsTo($this->getCustomerModel());
-    }
 
     /**
      * Get the subscription associated with the credit.

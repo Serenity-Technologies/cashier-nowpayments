@@ -13,6 +13,8 @@ use SerenityTechnologies\NowPayments\Facades\NowPayments;
 
 class PaymentStatusController extends Controller
 {
+    use FormatsJsonResponses;
+
     /**
      * Check payment status by purchase ID.
      *
@@ -64,13 +66,7 @@ class PaymentStatusController extends Controller
 
             $payment = NowPayments::getPaymentStatus($paymentId);
 
-            $status = match ($payment->payment_status) {
-                'finished' => 'completed',
-                'failed', 'expired' => 'failed',
-                'refunded' => 'refunded',
-                'partially_paid' => 'partial',
-                default => 'pending',
-            };
+            $status = $this->mapPaymentStatus($payment->payment_status);
 
             $result = [
                 'success' => true,
@@ -86,10 +82,7 @@ class PaymentStatusController extends Controller
 
             return response()->json($result);
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to check payment status.',
-            ], 500);
+            return $this->errorResponse('Failed to check payment status.');
         }
     }
 
@@ -133,13 +126,7 @@ class PaymentStatusController extends Controller
                 }
             }
 
-            $status = match ($payment->status) {
-                'finished' => 'completed',
-                'failed', 'expired' => 'failed',
-                'refunded' => 'refunded',
-                'partially_paid' => 'partial',
-                default => 'pending',
-            };
+            $status = $this->mapPaymentStatus($payment->status);
 
             return response()->json([
                 'success' => true,
@@ -151,16 +138,24 @@ class PaymentStatusController extends Controller
                 'pay_amount' => $payment->pay_amount,
             ]);
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Payment not found.',
-            ], 404);
+            return $this->errorResponse('Payment not found.', 404);
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to check payment status.',
-            ], 500);
+            return $this->errorResponse('Failed to check payment status.');
         }
+    }
+
+    /**
+     * Map NOWPayments payment status to display status.
+     */
+    protected function mapPaymentStatus(string $status): string
+    {
+        return match ($status) {
+            'finished' => 'completed',
+            'failed', 'expired' => 'failed',
+            'refunded' => 'refunded',
+            'partially_paid' => 'partial',
+            default => 'pending',
+        };
     }
 
     /**

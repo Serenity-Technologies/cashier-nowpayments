@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace SerenityTechnologies\CashierNowPayments\Models;
 
+use SerenityTechnologies\CashierNowPayments\Concerns\HasNowPaymentsTable;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -53,17 +54,12 @@ class Customer extends Model
 {
     use HasFactory;
     use SoftDeletes, HasUlids;
+    use HasNowPaymentsTable;
 
     /**
-     * Get the table name for the model.
-     *
-     * @return string The fully qualified table name with configured prefix
+     * Table suffix for the config-based prefix.
      */
-    public function getTable(): string
-    {
-        $prefix = config('cashier-nowpayments.prefix', 'cashier_nowpayments_');
-        return $prefix . 'customers';
-    }
+    protected string $nowPaymentsTable = 'customers';
 
     /**
      * The attributes that are mass assignable.
