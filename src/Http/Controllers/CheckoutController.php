@@ -14,6 +14,8 @@ use Illuminate\View\View;
 use SerenityTechnologies\CashierNowPayments\Models\Customer;
 use SerenityTechnologies\CashierNowPayments\Models\Invoice;
 use SerenityTechnologies\NowPayments\DTOs\Request\{EstimateRequest, InvoiceRequest, MinAmountRequest, SubscriptionRequest};
+use SerenityTechnologies\CashierNowPayments\Models\Payment;
+use SerenityTechnologies\NowPayments\DTOs\Response\SubscriptionResponse;
 use SerenityTechnologies\NowPayments\Facades\NowPayments;
 
 class CheckoutController extends Controller
@@ -36,13 +38,14 @@ class CheckoutController extends Controller
         $validated = $request->validate([
             'amount' => 'required|numeric|min:0.01',
             'currency' => 'required|string',
-            'type' => 'sometimes|string|in:payment,invoice,subscription',
+            'type' => 'sometimes|string|in:payment,invoice,subscription,invoice_payment',
             'description' => 'sometimes|string|max:500',
             'order_id' => 'sometimes|string|max:255',
             'metadata' => 'sometimes|array',
             'success_url' => 'sometimes|url',
             'cancel_url' => 'sometimes|url',
             'pay_currency' => 'sometimes|string',
+            'invoice_id' => 'sometimes|string',
         ]);
 
         $checkoutData = [
@@ -58,6 +61,12 @@ class CheckoutController extends Controller
             // Server-side timeout so the frontend timer matches
             'timeout_seconds' => config('cashier-nowpayments.checkout.payment_timeout_seconds', 900),
         ];
+
+        // Handle invoice payment flow with embedded widget
+        if ($checkoutData['type'] === 'invoice_payment' && !empty($validated['invoice_id'])) {
+            $checkoutData['invoice_id'] = $validated['invoice_id'];
+            $checkoutData['widget_url'] = 'https://nowpayments.io/embeds/payment-widget?iid=' . $validated['invoice_id'];
+        }
 
         return view('cashier-nowpayments::checkout', compact('checkoutData'));
     }
@@ -139,6 +148,7 @@ class CheckoutController extends Controller
 
     /**
      * Create a payment and return payment details.
+     * @throws \Throwable
      */
     public function createPayment(Request $request): JsonResponse
     {
@@ -211,7 +221,8 @@ class CheckoutController extends Controller
                 ], now()->addHours(24));
             }
 
-            $localPayment = $billable->charge((float) $validated['amount'], $validated['currency'])
+            /** @var Payment $localPayment */
+            $localPayment = $billable->newPayment((float) $validated['amount'], $validated['currency'])
                 ->withPayCurrency($validated['pay_currency'])
                 ->withDescription($validated['description'] ?? '')
                 ->withOrderId($orderId)
@@ -315,11 +326,141 @@ class CheckoutController extends Controller
     }
 
     /**
+     * Create a payment for an existing invoice.
+     *
+     * This uses NOWPayments' createInvoicePayment API to generate
+     * a crypto payment address for the given invoice.
+     *
+     * @param string $invoiceId The local invoice ID
+     * @param Request $request
+     * @return JsonResponse
+     */
+    public function payInvoice(string $invoiceId, Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'pay_currency' => 'required|string',
+            'payout_address' => 'sometimes|string|max:255',
+        ]);
+
+        try {
+            // Find the local invoice
+            $invoiceModel = config('cashier-nowpayments.model.invoice', Invoice::class);
+            /** @var Invoice $invoice */
+            $invoice = $invoiceModel::findOrFail($invoiceId);
+
+            // Verify ownership if user is authenticated
+            if ($request->user() !== null) {
+                if ($invoice->billable_id !== $request->user()->getKey()
+                    || $invoice->billable_type !== $request->user()->getMorphClass()) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Invoice not found or access denied.',
+                    ], 403);
+                }
+            }
+
+            // Validate invoice is active
+            if (!$invoice->isActive()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invoice is not active. Status: ' . $invoice->status,
+                ], 422);
+            }
+
+            // Validate minimum amount
+            $minAmount = $this->withRetry(fn() => NowPayments::getMinAmount(new MinAmountRequest(
+                currencyFrom: $invoice->currency,
+                currencyTo: $validated['pay_currency'],
+            )));
+
+            if (bccomp((string) $invoice->amount, (string) $minAmount->min_amount, 8) < 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Amount is below minimum payment requirement.',
+                    'minimum' => $minAmount->min_amount,
+                ], 422);
+            }
+
+            // Create payment for invoice via NOWPayments
+            $paymentResponse = $this->withRetry(fn() => NowPayments::createInvoicePayment(
+                new \SerenityTechnologies\NowPayments\DTOs\Request\InvoicePaymentRequest(
+                    iid: $invoice->nowpayments_invoice_id,
+                    payCurrency: $validated['pay_currency'],
+                    orderDescription: $invoice->order_description,
+                    customerEmail: $request->user()?->email,
+                    payoutAddress: $validated['payout_address'] ?? null,
+                )
+            ));
+
+            // Create local payment record
+            $paymentModel = config('cashier-nowpayments.model.payment', Payment::class);
+            /** @var Payment $localPayment */
+            $localPayment = new $paymentModel();
+            $localPayment->fill([
+                'customer_id' => $invoice->customer_id,
+                'billable_id' => $invoice->billable_id,
+                'billable_type' => $invoice->billable_type,
+                'nowpayments_payment_id' => (string) $paymentResponse->payment_id,
+                'nowpayments_purchase_id' => (string) $paymentResponse->purchase_id,
+                'type' => 'invoice',
+                'status' => $paymentResponse->payment_status,
+                'currency' => $paymentResponse->price_currency,
+                'amount' => $paymentResponse->price_amount,
+                'amount_paid' => $paymentResponse->actually_paid,
+                'pay_currency' => $paymentResponse->pay_currency,
+                'pay_amount' => $paymentResponse->pay_amount,
+                'pay_address' => $paymentResponse->pay_address,
+                'order_id' => $paymentResponse->order_id,
+                'order_description' => $paymentResponse->order_description,
+                'metadata' => [
+                    'invoice_id' => $invoice->id,
+                    'nowpayments_invoice_id' => $invoice->nowpayments_invoice_id,
+                ],
+            ]);
+            $localPayment->save();
+
+            // Fire event
+            \SerenityTechnologies\CashierNowPayments\Events\PaymentCreated::dispatch(
+                $invoice->billable ?? $invoice->customer,
+                $invoice->customer,
+                $paymentResponse
+            );
+
+            return response()->json([
+                'success' => true,
+                'payment_id' => $localPayment->nowpayments_payment_id,
+                'purchase_id' => $localPayment->nowpayments_purchase_id,
+                'pay_address' => $localPayment->pay_address,
+                'pay_amount' => $localPayment->pay_amount,
+                'pay_currency' => $localPayment->pay_currency,
+                'price_amount' => $localPayment->amount,
+                'price_currency' => $localPayment->currency,
+                'qr_code' => $this->generateQRCode($localPayment->pay_address, (float) $localPayment->pay_amount),
+                'local_payment_id' => $localPayment->id,
+                'timeout_seconds' => config('cashier-nowpayments.checkout.payment_timeout_seconds', 900),
+            ]);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invoice not found.',
+            ], 404);
+        } catch (\Exception $e) {
+            report($e);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to create invoice payment. Please try again.',
+            ], 500);
+        }
+    }
+
+    /**
      * Create a subscription and redirect to payment page.
      */
     public function createSubscription(Request $request): RedirectResponse|JsonResponse
     {
         $validated = $request->validate([
+            'type' => 'required|string',
             'plan_id' => 'required|integer',
             'success_url' => 'required|url',
             'cancel_url' => 'required|url',
@@ -335,25 +476,28 @@ class CheckoutController extends Controller
         }
 
         try {
-            $subscription = $this->withRetry(function () use ($validated) {
-                $subscriptionRequest = new SubscriptionRequest(
-                    subscriptionPlanId: $validated['plan_id'],
-                );
-
-                return NowPayments::createSubscription($subscriptionRequest);
+            /** @var SubscriptionResponse $subscription */
+            $subscription = $this->withRetry(function () use ($billable, $validated) {
+                return $billable->newSubscription($validated['type'], $validated['plan_id'])
+                    ->withMetaData([
+                        'success_url' => $validated['success_url'],
+                        'cancel_url' => $validated['cancel_url'],
+                    ])
+                    ->create();
             });
+
+
 
             if ($request->expectsJson()) {
                 return response()->json([
                     'success' => true,
                     'subscription_id' => $subscription->id,
-                    'subscription_url' => $subscription->subscription_url ?? null,
+                    'subscription_status' => $subscription->status ?? null,
                 ]);
             }
 
-            $redirectUrl = $subscription->subscription_url ?? config('app.url');
 
-            return redirect($redirectUrl);
+            return redirect()->to('success_url');
         } catch (\Exception $e) {
             report($e);
 
