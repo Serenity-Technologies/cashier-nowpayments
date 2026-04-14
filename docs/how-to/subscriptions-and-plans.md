@@ -19,16 +19,16 @@ This guide covers the complete lifecycle of subscription plans and recurring pay
 
 ## 1. Creating Plans
 
-Plans define the billing parameters for recurring subscriptions: amount, currency, interval, and redirect URLs. Plans are created via the **PlanBuilder** and are persisted both on the NOWPayments API and in your local database.
+Plans define the billing parameters for recurring subscriptions: amount, currency, interval, and redirect URLs. **Plans are global catalog items — not attached to any specific user.** Create them using `PlanBuilder` or the `Plan` model.
 
 ### Quick Start
 
 ```php
-use App\Models\User;
+use SerenityTechnologies\CashierNowPayments\PlanBuilder;
+use SerenityTechnologies\CashierNowPayments\Models\Plan;
 
-$user = User::find(1);
-
-$plan = $user->newPlan('monthly-pro')
+// Using PlanBuilder directly
+$plan = PlanBuilder::make('monthly-pro')
     ->withName('Monthly Pro Plan')
     ->withAmount(29.99)
     ->withCurrency('usd')
@@ -36,6 +36,13 @@ $plan = $user->newPlan('monthly-pro')
     ->withSuccessUrl('https://example.com/subscription/active')
     ->withCancelUrl('https://example.com/subscribe')
     ->withMetadata(['tier' => 'pro', 'features' => 'unlimited'])
+    ->create();
+
+// Using Plan model static factory (shorthand)
+$plan = Plan::newPlan('monthly-pro')
+    ->withName('Monthly Pro Plan')
+    ->withAmount(29.99)
+    ->withIntervalDays(30)
     ->create();
 ```
 
@@ -57,6 +64,25 @@ The `create()` method:
 | `withCancelUrl` | `string $url` | Redirect URL if subscription payment is cancelled. |
 | `withMetadata` | `array $metadata` | Arbitrary key-value metadata attached to the plan. |
 
+### Static Plan Helpers
+
+```php
+use SerenityTechnologies\CashierNowPayments\Models\Plan;
+
+// List all plans from the API
+$plans = Plan::listFromApi();
+
+// Find a plan by NOWPayments ID
+$plan = Plan::findByNowPaymentsId('12345');
+
+// Find a plan by name
+$plan = Plan::findByName('Monthly Pro Plan');
+
+// Sync a plan's details from the API
+$localPlan = Plan::findByNowPaymentsId('12345');
+$localPlan->sync();
+```
+
 ### Local Plan Model
 
 The persisted `Plan` model stores these fields:
@@ -73,41 +99,34 @@ The persisted `Plan` model stores these fields:
 | `cancel_url` | string | Cancel redirect URL. |
 | `metadata` | json | Arbitrary metadata. |
 
-### Static Plan Helpers
+### Updating Plans via the API
 
-The `ManagesPlans` trait provides two static helpers on your billable model:
-
-#### `User::listPlans(array $filters = [])`
-
-Fetches all plans from the NOWPayments API:
+You can list and update plans on the NOWPayments API using static methods:
 
 ```php
-use App\Models\User;
+use SerenityTechnologies\CashierNowPayments\Models\Plan;
 
-$plans = User::listPlans();
+// List all plans from the API
+$plans = Plan::listFromApi();
 
 foreach ($plans->plans as $plan) {
     echo $plan->id . ' - ' . $plan->title . ' (' . $plan->amount . ' ' . $plan->currency . ')';
 }
-```
 
-#### `User::updatePlan(string $planId, array $data)`
-
-Updates a plan on the NOWPayments API:
-
-```php
-use App\Models\User;
-
-$response = User::updatePlan('monthly-pro', [
-    'title' => 'Monthly Pro Plan (Updated)',
-    'amount' => 34.99,
-]);
+// Update a plan on the NOWPayments API
+$response = \SerenityTechnologies\NowPayments\Facades\NowPayments::updatePlan(
+    'monthly-pro',
+    new \SerenityTechnologies\NowPayments\DTOs\Request\UpdatePlanRequest(
+        title: 'Monthly Pro Plan (Updated)',
+        amount: 34.99,
+    )
+);
 ```
 
 > **Note:** `updatePlan()` updates the remote plan on NOWPayments. To update the local `Plan` record, you can either re-run the `PlanBuilder` (which performs an upsert) or call `syncFromApi()` on the local model:
 >
 > ```php
-> $localPlan = Plan::where('nowpayments_plan_id', 'monthly-pro')->first();
+> $localPlan = Plan::findByNowPaymentsId('12345');
 > $localPlan->syncFromApi();
 > ```
 
@@ -124,6 +143,8 @@ use App\Models\User;
 
 $user = User::find(1);
 
+$plan = Plan::find(1);
+$planId = $plan->nowpayments_plan_id;
 // Ensure a Customer record exists first
 $customer = $user->createOrGetCustomer();
 
@@ -590,13 +611,13 @@ This end-to-end example demonstrates the complete lifecycle: create a plan, subs
 
 ### Step 1: Create the Plans
 
-```php
-use App\Models\User;
+Plans are global — create them once, not per-user:
 
-$user = User::find(1);
+```php
+use SerenityTechnologies\CashierNowPayments\PlanBuilder;
 
 // Basic plan
-$basicPlan = $user->newPlan('basic-monthly')
+$basicPlan = PlanBuilder::make('basic-monthly')
     ->withName('Basic Monthly')
     ->withAmount(9.99)
     ->withCurrency('usd')
@@ -604,7 +625,7 @@ $basicPlan = $user->newPlan('basic-monthly')
     ->create();
 
 // Pro plan
-$proPlan = $user->newPlan('pro-monthly')
+$proPlan = PlanBuilder::make('pro-monthly')
     ->withName('Pro Monthly')
     ->withAmount(29.99)
     ->withCurrency('usd')
@@ -728,9 +749,9 @@ $newSubscription = $user->newSubscription('default', $proPlan->nowpayments_plan_
 ### Summary of the Lifecycle
 
 ```
-Create Plans
-  -> newPlan('basic-monthly')->withAmount(9.99)->create()
-  -> newPlan('pro-monthly')->withAmount(29.99)->create()
+Create Plans (global, one-time setup)
+  -> PlanBuilder::make('basic-monthly')->withAmount(9.99)->create()
+  -> PlanBuilder::make('pro-monthly')->withAmount(29.99)->create()
 
 Subscribe
   -> newSubscription('default', $planId)->withTrialDays(7)->create()

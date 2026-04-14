@@ -9,6 +9,8 @@ use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use SerenityTechnologies\CashierNowPayments\PlanBuilder;
+use SerenityTechnologies\NowPayments\Exceptions\NowPaymentsException;
 
 /**
  * Represents a subscription plan from NOWPayments.
@@ -92,6 +94,62 @@ class Plan extends Model
     }
 
     /**
+     * Create a new plan using the fluent builder.
+     *
+     * Plans are global catalog items — not attached to any user.
+     *
+     * @param string $planId The unique plan identifier
+     * @return PlanBuilder
+     */
+    public static function newPlan(string $planId): PlanBuilder
+    {
+        return PlanBuilder::make($planId);
+    }
+
+    /**
+     * Find a plan by its NOWPayments plan ID.
+     *
+     * @param string $nowpaymentsPlanId
+     * @return static|null
+     */
+    public static function findByNowPaymentsId(string $nowpaymentsPlanId): ?self
+    {
+        return static::where('nowpayments_plan_id', $nowpaymentsPlanId)->first();
+    }
+
+    /**
+     * Find a plan by its slug (name).
+     *
+     * @param string $name
+     * @return static|null
+     */
+    public static function findByName(string $name): ?self
+    {
+        return static::where('name', $name)->first();
+    }
+
+    /**
+     * List all plans from the NOWPayments API.
+     *
+     * @return \SerenityTechnologies\NowPayments\DTOs\Response\PlanListResponse
+     */
+    public static function listFromApi(array $filters = []): \SerenityTechnologies\NowPayments\DTOs\Response\PlanListResponse
+    {
+        return \SerenityTechnologies\NowPayments\Facades\NowPayments::listPlans($filters);
+    }
+
+    /**
+     * Sync this plan's details from the NOWPayments API.
+     *
+     * @return $this
+     * @throws NowPaymentsException
+     */
+    public function sync(): self
+    {
+        return $this->syncFromApi();
+    }
+
+    /**
      * Scope a query to only include active plans.
      *
      * @param \Illuminate\Database\Eloquent\Builder<self> $query
@@ -119,6 +177,7 @@ class Plan extends Model
      * the local record.
      *
      * @return $this
+     * @throws NowPaymentsException
      */
     public function syncFromApi(): self
     {

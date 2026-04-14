@@ -216,7 +216,7 @@ class SubscriptionBuilder
             // If plan not found, throw descriptive error instead of creating one with 0 amount
             if (str_contains($e->getMessage(), 'not found') || $e->getCode() === 404) {
                 throw new \InvalidArgumentException(
-                    "Plan '{$this->planId}' does not exist in NOWPayments. Create it via \$user->newPlan()->create() first."
+                    "Plan '{$this->planId}' does not exist in NOWPayments. Create it via PlanBuilder::make('{$this->planId}')->withAmount(...)->create() first."
                 );
             }
             // Re-throw other exceptions (network errors, auth failures, etc.)

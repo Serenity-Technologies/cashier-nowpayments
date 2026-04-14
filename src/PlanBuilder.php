@@ -4,9 +4,25 @@ declare(strict_types=1);
 
 namespace SerenityTechnologies\CashierNowPayments;
 
+use SerenityTechnologies\CashierNowPayments\Models\Plan;
 use SerenityTechnologies\NowPayments\DTOs\Request\PlanRequest;
 use SerenityTechnologies\NowPayments\Facades\NowPayments;
 
+/**
+ * Fluent builder for creating and managing subscription plans.
+ *
+ * Plans are global catalog items — not attached to any specific billable model.
+ * Use this builder to create plans on NOWPayments and persist them locally.
+ *
+ * Usage:
+ *   PlanBuilder::make('monthly-pro')
+ *       ->withName('Monthly Pro Plan')
+ *       ->withAmount(29.99)
+ *       ->create();
+ *
+ * Or statically via the Plan model:
+ *   Plan::create('monthly-pro', amount: 29.99);
+ */
 class PlanBuilder
 {
     /**
@@ -57,6 +73,14 @@ class PlanBuilder
         $this->planId = $planId;
         $this->name = $planId;
         $this->currency = config('cashier-nowpayments.currency', 'usd');
+    }
+
+    /**
+     * Create a new plan builder instance (static factory).
+     */
+    public static function make(string $planId): self
+    {
+        return new self($planId);
     }
 
     /**
@@ -156,9 +180,9 @@ class PlanBuilder
      */
     protected function persistPlan(\SerenityTechnologies\NowPayments\DTOs\Response\PlanResponse $response): void
     {
-        $planModel = config('cashier-nowpayments.model.plan', \SerenityTechnologies\CashierNowPayments\Models\Plan::class);
+        $planModel = config('cashier-nowpayments.model.plan', Plan::class);
 
-        /** @var \SerenityTechnologies\CashierNowPayments\Models\Plan|null $existingPlan */
+        /** @var Plan|null $existingPlan */
         $existingPlan = $planModel::where('nowpayments_plan_id', $response->id)->first();
 
         if ($existingPlan !== null) {
@@ -175,7 +199,7 @@ class PlanBuilder
             return;
         }
 
-        /** @var \SerenityTechnologies\CashierNowPayments\Models\Plan $plan */
+        /** @var Plan $plan */
         $plan = new $planModel();
 
         $plan->fill([

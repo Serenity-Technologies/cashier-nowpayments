@@ -27,10 +27,14 @@ class User extends Authenticatable
 
 ## Creating Plans
 
-Use `PlanBuilder` via `$user->newPlan()`:
+Plans are global catalog items. Use `PlanBuilder` or the `Plan` model:
 
 ```php
-$plan = $user->newPlan('premium-monthly')
+use SerenityTechnologies\CashierNowPayments\PlanBuilder;
+use SerenityTechnologies\CashierNowPayments\Models\Plan;
+
+// Using PlanBuilder directly
+$plan = PlanBuilder::make('premium-monthly')
     ->withName('Premium Monthly')
     ->withAmount(29.99)
     ->withCurrency('usd')
@@ -40,9 +44,15 @@ $plan = $user->newPlan('premium-monthly')
     ->withMetadata(['tier' => 'premium'])
     ->create();  // Creates on NOWPayments + persists locally (upsert)
 
+// Or shorthand via Plan model
+$plan = Plan::newPlan('premium-monthly')
+    ->withName('Premium Monthly')
+    ->withAmount(29.99)
+    ->create();
+
 // Static helpers
-User::listPlans();                    // List all plans from API
-User::updatePlan($planId, [...]);     // Update plan on API
+Plan::listFromApi();                  // List all plans from API
+$plan = Plan::findByNowPaymentsId('12345');
 ```
 
 ### PlanBuilder Methods
