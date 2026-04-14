@@ -168,7 +168,7 @@ class WebhookController extends Controller
             return;
         }
 
-        // Handle payment webhook
+        // Handle payment webhook (includes invoice payments when both payment_id and invoice_id are present)
         if (isset($data['payment_id'])) {
             $this->handlePayment($data);
         }
@@ -178,8 +178,8 @@ class WebhookController extends Controller
             $this->handleSubscription($data);
         }
 
-        // Handle invoice webhook
-        if (isset($data['invoice_id'])) {
+        // Handle invoice webhook (invoice status changes without a payment_id)
+        if (isset($data['invoice_id']) && !isset($data['payment_id'])) {
             $this->handleInvoice($data);
         }
 
@@ -191,6 +191,10 @@ class WebhookController extends Controller
 
     /**
      * Handle payment webhook data.
+     *
+     * This handles both direct payments and invoice payments.
+     * For invoice payments (when invoice_id is present), the billable
+     * is resolved through the invoice relationship, NOT from cache.
      */
     protected function handlePayment(array $data): void
     {
@@ -200,16 +204,35 @@ class WebhookController extends Controller
         $payment = $paymentModel::where('nowpayments_payment_id', (string) $data['payment_id'])->first();
 
         if ($payment === null) {
-            // Create payment record if it doesn't exist
-            $customer = $this->getOrCreateCustomerFromWebhook($data);
+            // Resolve billable: invoice payments inherit billable from invoice,
+            // direct payments resolve from checkout cache
+            $billable = null;
+            $customer = null;
+
+            // If this is an invoice payment, get billable from the invoice
+            if (isset($data['invoice_id'])) {
+                $invoiceModel = config('cashier-nowpayments.model.invoice', Invoice::class);
+                $invoice = $invoiceModel::with('billable', 'customer')->where('nowpayments_invoice_id', $data['invoice_id'])->first();
+
+                if ($invoice !== null) {
+                    $billable = $invoice->billable;
+                    $customer = $invoice->customer;
+                }
+            }
+
+            // Fallback: resolve from checkout cache (for direct payments or when invoice not found)
+            if ($customer === null) {
+                $customer = $this->getOrCreateCustomerFromWebhook($data);
+                $billable = $customer->billable;
+            }
 
             $payment = new $paymentModel();
-            $payment->fill([
+            $dataArray = [
                 'customer_id' => $customer->id,
                 'nowpayments_payment_id' => (string) $data['payment_id'],
                 'nowpayments_purchase_id' => $data['purchase_id'] ?? null,
                 'parent_payment_id' => $data['parent_payment_id'] ?? null,
-                'type' => 'onetime',
+                'type' => isset($data['invoice_id']) ? 'invoice' : 'onetime',
                 'status' => $data['payment_status'],
                 'currency' => $data['price_currency'] ?? null,
                 'amount' => $data['price_amount'] ?? 0,
@@ -222,12 +245,14 @@ class WebhookController extends Controller
                 'payin_hash' => $data['payin_hash'] ?? null,
                 'payout_hash' => $data['payout_hash'] ?? null,
                 'fee' => $data['fee'] ?? null,
-            ]);
+            ];
 
-            if ($customer->billable !== null) {
-                $payment->billable()->associate($customer->billable);
+            if ($billable !== null) {
+                $dataArray['billable_id'] = $billable->getKey();
+                $dataArray['billable_type'] = $billable->getMorphClass();
             }
 
+            $payment->fill($dataArray);
             $payment->save();
         } else {
             // Update existing payment efficiently
@@ -309,6 +334,9 @@ class WebhookController extends Controller
 
     /**
      * Handle invoice webhook data.
+     *
+     * This handles invoice status changes (not individual payments).
+     * Individual payments against invoices are handled by handlePayment().
      */
     protected function handleInvoice(array $data): void
     {
@@ -385,6 +413,8 @@ class WebhookController extends Controller
      *
      * Attempts to reconcile the billable association using the order_id
      * stored in the checkout session cache.
+     *
+     * @throws \RuntimeException If the billable cannot be resolved for a new customer
      */
     protected function getOrCreateCustomerFromWebhook(array $data): Customer
     {
@@ -420,8 +450,45 @@ class WebhookController extends Controller
             }
         }
 
-        // Create a new customer record — billable association will need
-        // manual reconciliation via order_id or email matching.
+        // Attempt to resolve billable association from order_id cache
+        $billable = null;
+        if (isset($data['order_id']) && !empty($data['order_id'])) {
+            // Check session cache for billable mapping
+            $billableMapping = Cache::get('checkout.billable.' . $data['order_id']);
+            if ($billableMapping !== null) {
+                // Try to find the billable model
+                $billableType = $billableMapping['billable_type'];
+                $billableId = $billableMapping['billable_id'];
+
+                if (class_exists($billableType)) {
+                    $billable = $billableType::find($billableId);
+                }
+            }
+        }
+
+        // If no billable found, try to find by email on existing billable models
+        if ($billable === null && isset($data['email']) && !empty($data['email'])) {
+            $billableModel = config('cashier-nowpayments.billable');
+            if ($billableModel !== null) {
+                $billable = $billableModel::where('email', $data['email'])->first();
+            }
+        }
+
+        // If we still can't resolve the billable, we cannot create the customer
+        // because the billable columns are NOT NULL. This typically means the
+        // checkout cache expired (7-day TTL) or the payment was created outside
+        // this package's flow.
+        if ($billable === null) {
+            $orderId = $data['order_id'] ?? 'unknown';
+            throw new \RuntimeException(
+                "Unable to resolve billable model for webhook payment. "
+                . "Order ID: {$orderId}. "
+                . "This usually means the checkout session cache has expired. "
+                . "The payment exists on NOWPayments but has no local billable association."
+            );
+        }
+
+        // Create a new customer record with the resolved billable association
         /** @var Customer $customer */
         $customer = new $customerModel();
         $customer->fill([
@@ -434,6 +501,7 @@ class WebhookController extends Controller
             ],
         ]);
 
+        $customer->billable()->associate($billable);
         $customer->save();
 
         return $customer;

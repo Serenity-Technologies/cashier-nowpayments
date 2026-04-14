@@ -116,20 +116,29 @@ return redirect($invoice->invoice_url);
 
 ### Subscriptions & Plans
 
-Create a plan and subscribe a user:
+Plans are global catalog items. Create plans and subscribe users:
 
 @verbatim
 <code-snippet name="Create Plan & Subscribe" lang="php">
-// Create plan on NOWPayments + persist locally
-$plan = $user->newPlan('premium-monthly')
+use SerenityTechnologies\CashierNowPayments\PlanBuilder;
+use SerenityTechnologies\CashierNowPayments\Models\Plan;
+
+// Create plan on NOWPayments + persist locally (global)
+$plan = PlanBuilder::make('premium-monthly')
     ->withName('Premium Monthly')
     ->withAmount(29.99)
     ->withCurrency('usd')
     ->withIntervalDays(30)
     ->create();
 
+// Or shorthand via Plan model
+$plan = Plan::newPlan('premium-monthly')
+    ->withName('Premium Monthly')
+    ->withAmount(29.99)
+    ->create();
+
 // Subscribe user with trial
-$subscription = $user->newSubscription('default', $plan->id)
+$subscription = $user->newSubscription('default', $plan->nowpayments_plan_id)
     ->withTrialDays(7)
     ->withMetadata(['source' => 'web'])
     ->create();
@@ -213,7 +222,7 @@ $balance = $customer->creditBalance();  // Returns string (bcmath)
 $payment = $user->newPayment(49.99, 'usd')
     ->withCredits()  // Consumes credits before charging
     ->charge();
-</code-snipet>
+</code-snippet>
 @endverbatim
 
 ### Key Configuration

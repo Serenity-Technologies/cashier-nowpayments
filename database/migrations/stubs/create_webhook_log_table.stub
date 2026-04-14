@@ -46,7 +46,7 @@ return new class extends Migration
             /** @var bool Whether the webhook was processed */
             $table->boolean('processed')->default(false);
             /** @var string Error message if processing failed */
-            $table->string('processing_error')->nullable();
+            $table->text('processing_error')->nullable();
             /** @var string Full webhook payload in JSON format */
             $table->json('payload');
             /** @var string IP address of the webhook sender */

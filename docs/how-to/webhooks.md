@@ -964,18 +964,6 @@ public function test_payment_webhook(): void
 }
 ```
 
-### Generating a Webhook URL Programmatically
-
-The package includes a `GeneratesWebhookUrl` support class that can help you construct the full webhook URL:
-
-```php
-use SerenityTechnologies\CashierNowPayments\Support\GeneratesWebhookUrl;
-
-$url = GeneratesWebhookUrl::for('your-domain.com');
-// https://your-domain.com/nowpayments/webhook
-```
-
----
 
 ## 12. All Dispatched Events
 
