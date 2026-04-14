@@ -6,7 +6,6 @@ namespace SerenityTechnologies\CashierNowPayments\Concerns;
 
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use SerenityTechnologies\CashierNowPayments\Models\Subscription;
-use SerenityTechnologies\CashierNowPayments\PlanBuilder;
 use SerenityTechnologies\CashierNowPayments\SubscriptionBuilder;
 use SerenityTechnologies\NowPayments\Facades\NowPayments;
 
@@ -20,14 +19,6 @@ trait ManagesSubscriptions
         $customer = $this->createOrGetCustomer();
 
         return new SubscriptionBuilder($this, $customer, $type, $planId);
-    }
-
-    /**
-     * Create a new subscription plan.
-     */
-    public function newPlan(string $planId): PlanBuilder
-    {
-        return new PlanBuilder($planId);
     }
 
     /**

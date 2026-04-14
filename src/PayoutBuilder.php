@@ -9,15 +9,12 @@ use Illuminate\Database\Eloquent\Model;
 use SerenityTechnologies\CashierNowPayments\Events\PayoutCreated;
 use SerenityTechnologies\CashierNowPayments\Models\Customer;
 use SerenityTechnologies\CashierNowPayments\Models\Payout;
-use SerenityTechnologies\CashierNowPayments\Support\GeneratesWebhookUrl;
 use SerenityTechnologies\NowPayments\DTOs\Request\PayoutRequest;
 use SerenityTechnologies\NowPayments\DTOs\Request\PayoutWithdrawalItem;
 use SerenityTechnologies\NowPayments\Facades\NowPayments;
 
 class PayoutBuilder
 {
-    use GeneratesWebhookUrl;
-
     /**
      * The billable model.
      */
@@ -115,7 +112,7 @@ class PayoutBuilder
             withdrawals: $this->withdrawals,
             executeAt: $this->executeAt?->toIso8601String(),
             payoutDescription: $this->description,
-            ipnCallbackUrl: $this->getWebhookUrl(),
+            ipnCallbackUrl: route('cashier-nowpayments.webhook'),
         );
 
         $response = NowPayments::createPayout($request);
@@ -165,7 +162,7 @@ class PayoutBuilder
             'extra_id' => $withdrawal->extraId ?? null,
             'hash' => $response->hash ?? null,
             'error' => $response->error ?? null,
-            'ipn_callback_url' => $this->getWebhookUrl(),
+            'ipn_callback_url' => route('cashier-nowpayments.webhook'),
             'execute_at' => $this->executeAt,
             'metadata' => $this->metadata,
         ]);

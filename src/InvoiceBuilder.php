@@ -8,13 +8,11 @@ use Illuminate\Database\Eloquent\Model;
 use SerenityTechnologies\CashierNowPayments\Events\InvoiceCreated;
 use SerenityTechnologies\CashierNowPayments\Models\Customer;
 use SerenityTechnologies\CashierNowPayments\Models\Invoice;
-use SerenityTechnologies\CashierNowPayments\Support\GeneratesWebhookUrl;
 use SerenityTechnologies\NowPayments\DTOs\Request\InvoiceRequest;
 use SerenityTechnologies\NowPayments\Facades\NowPayments;
 
 class InvoiceBuilder
 {
-    use GeneratesWebhookUrl;
     /**
      * The billable model.
      */
@@ -152,7 +150,7 @@ class InvoiceBuilder
         $request = new InvoiceRequest(
             priceAmount: $this->amount,
             priceCurrency: $this->currency,
-            ipnCallbackUrl: $this->getWebhookUrl(),
+            ipnCallbackUrl: route('cashier-nowpayments.webhook'),
             orderId: $this->orderId ?? 'INV-' . \Illuminate\Support\Str::ulid()->toString(),
             orderDescription: $this->description,
             successUrl: $this->successUrl,

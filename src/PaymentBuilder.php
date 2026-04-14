@@ -9,13 +9,11 @@ use Illuminate\Support\Facades\DB;
 use SerenityTechnologies\CashierNowPayments\Events\PaymentCreated;
 use SerenityTechnologies\CashierNowPayments\Models\Customer;
 use SerenityTechnologies\CashierNowPayments\Models\Payment;
-use SerenityTechnologies\CashierNowPayments\Support\GeneratesWebhookUrl;
 use SerenityTechnologies\NowPayments\DTOs\Request\PaymentRequest;
 use SerenityTechnologies\NowPayments\Facades\NowPayments;
 
 class PaymentBuilder
 {
-    use GeneratesWebhookUrl;
     /**
      * The billable model.
      */
@@ -204,7 +202,7 @@ class PaymentBuilder
             priceAmount: $this->amount,
             priceCurrency: $this->currency,
             payCurrency: $this->payCurrency ?? config('cashier-nowpayments.currency', 'usd'),
-            ipnCallbackUrl: $this->getWebhookUrl(),
+            ipnCallbackUrl: route('cashier-nowpayments.webhook'),
             orderId: $this->orderId ?? 'ORDER-' . \Illuminate\Support\Str::ulid()->toString(),
             orderDescription: $this->description,
             isFixedRate: $this->fixedRate,

@@ -39,7 +39,7 @@ trait ManagesInvoices
     public function payInvoice(Invoice $invoice, string $payCurrency, ?string $payoutAddress = null): Payment
     {
         $request = new InvoicePaymentRequest(
-            iid: $invoice->nowpayments_invoice_id,
+            iid: (int) $invoice->nowpayments_invoice_id,
             payCurrency: $payCurrency,
             orderDescription: $invoice->order_description,
             customerEmail: $invoice->customer->email,
