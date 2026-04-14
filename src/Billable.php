@@ -13,7 +13,6 @@ use SerenityTechnologies\CashierNowPayments\Concerns\{
     ManagesInvoices,
     ManagesPayments,
     ManagesPayouts,
-    ManagesPlans,
     ManagesSubscriptions,
     ProvidesCheckoutHelpers
 };
@@ -46,6 +45,5 @@ trait Billable
     use ManagesCurrencies;
     use ManagesConversions;
     use ManagesFiatPayouts;
-    use ManagesPlans;
     use ProvidesCheckoutHelpers;
 }

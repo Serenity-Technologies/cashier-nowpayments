@@ -165,7 +165,7 @@ class Invoice extends Model
         }
 
         $request = new \SerenityTechnologies\NowPayments\DTOs\Request\InvoicePaymentRequest(
-            iid: $this->nowpayments_invoice_id,
+            iid: (int) $this->nowpayments_invoice_id,
             payCurrency: $payCurrency,
             orderDescription: $this->order_description,
             customerEmail: $this->customer->email,

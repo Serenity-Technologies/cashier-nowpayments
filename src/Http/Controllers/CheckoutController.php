@@ -216,11 +216,12 @@ class CheckoutController extends Controller
             $billable = $request->user() ?? $this->getOrCreateGuestCustomer($request);
 
             // Cache billable mapping for webhook reconciliation
+            // Use 7-day TTL to ensure availability for late webhooks (e.g., delayed payments, retries)
             if ($billable !== null && $orderId !== null) {
                 Cache::put('checkout.billable.' . $orderId, [
                     'billable_type' => $billable->getMorphClass(),
                     'billable_id' => $billable->getKey(),
-                ], now()->addHours(24));
+                ], now()->addDays(7));
             }
 
             /** @var Payment $localPayment */
