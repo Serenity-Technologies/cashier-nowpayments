@@ -13,7 +13,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use SerenityTechnologies\CashierNowPayments\Events\SubscriptionCancelled;
+use SerenityTechnologies\CashierNowPayments\Events\SubscriptionSwapped;
 use SerenityTechnologies\CashierNowPayments\Events\SubscriptionUpdated;
+use SerenityTechnologies\CashierNowPayments\Services\CheckoutService;
+use SerenityTechnologies\CashierNowPayments\Support\ProrationMode;
 use SerenityTechnologies\NowPayments\DTOs\Request\SubscriptionRequest;
 use SerenityTechnologies\NowPayments\Facades\NowPayments;
 
@@ -91,7 +94,7 @@ class Subscription extends Model
         'ends_at' => 'datetime',
         'renews_at' => 'datetime',
         'cancels_at' => 'datetime',
-        'total_price' => 'decimal:2',
+        'total_price' => 'decimal:8',
     ];
 
     /**
@@ -132,6 +135,16 @@ class Subscription extends Model
     public function credits(): HasMany
     {
         return $this->hasMany($this->getCreditModel());
+    }
+
+    /**
+     * Get the plan for this subscription.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo<Plan, $this>
+     */
+    public function plan(): BelongsTo
+    {
+        return $this->belongsTo($this->getPlanModel(), 'nowpayments_plan_id', 'nowpayments_plan_id');
     }
 
     /**
@@ -307,22 +320,45 @@ class Subscription extends Model
      * billing days, updates the local total_price, and records the
      * credit ledger entry atomically.
      *
+     * When using ProrationMode::IMMEDIATE for upgrades, the upgrade charge
+     * is applied via the checkout flow. The checkout URL is included in the
+     * dispatched events for redirect purposes.
+     *
      * @param string $newPlanId The NOWPayments plan ID to swap to
+     * @param string|null $prorationMode Override proration mode (credit, immediate, end_of_period, none)
      * @return $this
+     * @throws \Throwable
      */
-    public function swap(string $newPlanId): self
+    public function swap(string $newPlanId, ?string $prorationMode = null): self
     {
-        return \Illuminate\Support\Facades\DB::transaction(function () use ($newPlanId) {
+        $mode = $prorationMode ?? config('cashier-nowpayments.proration.mode', ProrationMode::CREDIT);
+        ProrationMode::validate($mode);
+
+        $oldSubscriptionId = $this->nowpayments_subscription_id;
+
+        return \Illuminate\Support\Facades\DB::transaction(function () use ($newPlanId, $mode, $oldSubscriptionId) {
             $oldPlanId = $this->nowpayments_plan_id;
             $oldPrice = $this->total_price;
             $oldCurrency = $this->currency;
 
-            // Compute prorated remaining value before deleting
-            $proratedCredit = $this->calculateProratedCredit();
+            // Compute prorated remaining value based on mode
+            $proratedCredit = 0.0;
+            if ($mode !== ProrationMode::END_OF_PERIOD && $mode !== ProrationMode::NONE) {
+                $proratedCredit = $this->calculateProratedCredit();
+            }
 
             // Delete current subscription on NOWPayments
             if ($this->nowpayments_subscription_id !== null) {
-                NowPayments::deleteSubscription($this->nowpayments_subscription_id);
+                try {
+                    NowPayments::deleteSubscription($this->nowpayments_subscription_id);
+                } catch (\Throwable $e) {
+                    $message = strtolower($e->getMessage());
+                    // Only swallow "not found" type errors — the subscription may have been auto-deleted
+                    if (!str_contains($message, '404') && !str_contains($message, 'not found') && !str_contains($message, 'does not exist')) {
+                        throw $e;
+                    }
+                    report("Subscription {$oldSubscriptionId} already deleted on NOWPayments");
+                }
             }
 
             // Create new subscription with new plan
@@ -351,8 +387,24 @@ class Subscription extends Model
             // Update subscription items
             $this->items()->update(['nowpayments_plan_id' => $newPlanId]);
 
-            // Record credit ledger entry (only if customer exists and prorated value > 0)
-            if ($this->customer_id !== null && $proratedCredit > 0) {
+            // Calculate price difference for upgrade/downgrade classification
+            $difference = (float) bcsub(
+                number_format($oldPrice, 8, '.', ''),
+                number_format($this->total_price, 8, '.', ''),
+                8,
+            );
+
+            $isUpgrade = $difference < 0;
+            $isDowngrade = $difference > 0;
+
+            // Handle immediate charging for upgrades
+            $upgradeCheckoutUrl = null;
+            if ($isUpgrade && $mode === ProrationMode::IMMEDIATE) {
+                $upgradeCheckoutUrl = $this->handleUpgradeCharge(abs($difference), $oldPlanId);
+            }
+
+            // Record credit ledger entry (only for credit mode and if customer exists and prorated value > 0)
+            if ($this->customer_id !== null && $proratedCredit > 0 && $mode === ProrationMode::CREDIT) {
                 $this->recordSwapCredit(
                     oldPlanId: $oldPlanId,
                     newPlanId: $newPlanId,
@@ -368,6 +420,16 @@ class Subscription extends Model
                 'old_price' => $oldPrice,
                 'new_price' => $this->total_price,
                 'prorated_credit' => $proratedCredit,
+                'proration_mode' => $mode,
+                'swap_type' => $isUpgrade ? 'upgrade' : ($isDowngrade ? 'downgrade' : 'lateral'),
+                'upgrade_checkout_url' => $upgradeCheckoutUrl,
+            ]);
+
+            SubscriptionSwapped::dispatch($this, [
+                'old_plan_id' => $oldPlanId,
+                'new_plan_id' => $newPlanId,
+                'proration_mode' => $mode,
+                'upgrade_checkout_url' => $upgradeCheckoutUrl,
             ]);
 
             return $this;
@@ -410,21 +472,93 @@ class Subscription extends Model
 
         $proratedAmount = ($remainingDays / $totalDays) * (float) $this->total_price;
 
-        // Round to 2 decimal places for currency precision
-        return round($proratedAmount, 2);
+        // Round to 8 decimal places to match bcmath precision standard used elsewhere
+        return round($proratedAmount, 8);
     }
 
     /**
      * Get the billing interval in days.
      *
-     * Uses the locally stored interval_days to avoid making external API calls
-     * inside database transactions (e.g., during swap proration calculations).
+     * Uses the plan's interval_days if available, otherwise falls back to
+     * the configured default interval, and finally to 30 days.
      *
-     * @return int The billing interval in days (defaults to 30)
+     * @return int The billing interval in days
      */
     protected function getBillingIntervalDays(): int
     {
-        return (int) ($this->interval_days ?? 30);
+        // First try to get from the plan relationship
+        if ($this->relationLoaded('plan') && $this->plan !== null) {
+            return (int) ($this->plan->interval_days
+                ?? config('cashier-nowpayments.proration.default_interval_days', 30));
+        }
+
+        // Fall back to config, then to default
+        return (int) config('cashier-nowpayments.proration.default_interval_days', 30);
+    }
+
+    /**
+     * Handle immediate charging for upgrades.
+     *
+     * When a user upgrades to a more expensive plan, this method creates
+     * a checkout URL for the price difference. The checkout URL can be
+     * used to redirect the customer to complete the payment.
+     *
+     * @param float $chargeAmount The amount to charge
+     * @param string $oldPlanId The plan ID being swapped away from
+     * @return string|null The checkout URL, or null if failed
+     */
+    protected function handleUpgradeCharge(float $chargeAmount, string $oldPlanId): ?string
+    {
+        if ($chargeAmount <= 0 || $this->customer_id === null) {
+            return null;
+        }
+
+        try {
+            $customer = $this->customer;
+
+            // First try to apply credits against the upgrade charge
+            $creditResult = $customer->applyCredits($chargeAmount);
+            $covered = (float) $creditResult['covered'];
+            $remaining = (float) $creditResult['remaining'];
+
+            // If fully covered by credits, no checkout needed
+            if ($remaining <= 0) {
+                return null;
+            }
+
+            // Create checkout session for the remaining amount
+            $checkoutService = app(CheckoutService::class);
+
+            $session = $checkoutService->createSession(
+                amount: $remaining,
+                currency: $this->currency,
+                options: [
+                    'description' => "Upgrade charge: Plan swap {$oldPlanId} (difference)",
+                    'order_id' => 'UPGRADE-' . \Illuminate\Support\Str::ulid()->toString(),
+                    'metadata' => [
+                        'upgrade_charge' => true,
+                        'subscription_id' => $this->id,
+                        'old_plan_id' => $oldPlanId,
+                        'credits_applied' => $covered,
+                        'original_charge_amount' => $chargeAmount,
+                    ],
+                ]
+            );
+
+            // Generate checkout URL for customer redirect
+            return $customer->billable->checkoutUrl($remaining, $this->currency, [
+                'order_id' => $session->getId(),
+                'description' => "Upgrade charge: Plan swap {$oldPlanId}",
+                'metadata' => [
+                    'upgrade_charge' => true,
+                    'subscription_id' => $this->id,
+                    'credits_applied' => $covered,
+                ],
+            ]);
+        } catch (\Throwable $e) {
+            report("Failed to create upgrade charge checkout: {$e->getMessage()}");
+            return null;
+        }
     }
 
     /**
@@ -485,7 +619,9 @@ class Subscription extends Model
                 'difference' => $difference,
                 'swap_type' => $difference > 0 ? 'downgrade' : ($difference < 0 ? 'upgrade' : 'lateral'),
             ],
-            'expires_at' => $this->renews_at, // Credit expires at end of current billing cycle
+            'expires_at' => config('cashier-nowpayments.proration.credits_expire', true)
+                ? $this->renews_at
+                : null,
         ]);
 
         $credit->save();
@@ -578,5 +714,15 @@ class Subscription extends Model
     protected function getCreditModel(): string
     {
         return config('cashier-nowpayments.model.credit', Credit::class);
+    }
+
+    /**
+     * Get the plan model class.
+     *
+     * @return class-string<Plan>
+     */
+    protected function getPlanModel(): string
+    {
+        return config('cashier-nowpayments.model.plan', Plan::class);
     }
 }

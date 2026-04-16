@@ -79,6 +79,13 @@ class Customer extends Model
     ];
 
     /**
+     * Cached credit balance to avoid repeated SUM() queries.
+     *
+     * @var string|null
+     */
+    protected ?string $creditBalanceCache = null;
+
+    /**
      * Get the owning billable model.
      *
      * @return \Illuminate\Database\Eloquent\Relations\MorphTo<Model, $this>
@@ -141,17 +148,39 @@ class Customer extends Model
     /**
      * Get the total credit balance for the customer.
      *
+     * Uses cached balance if available to avoid repeated SUM() queries.
+     *
+     * @param bool $forceRefresh Force a fresh calculation from the database
      * @return string The sum of all unapplied, non-expired credit amounts
      */
-    public function creditBalance(): string
+    public function creditBalance(bool $forceRefresh = false): string
     {
-        return (string) $this->credits()
+        if ($this->creditBalanceCache !== null && !$forceRefresh) {
+            return $this->creditBalanceCache;
+        }
+
+        $balance = (string) $this->credits()
             ->whereNull('applied_at')
+            ->whereNull('expired_at')
             ->where(function ($query) {
                 $query->whereNull('expires_at')
                     ->orWhere('expires_at', '>', now());
             })
             ->sum('amount');
+
+        $this->creditBalanceCache = $balance;
+
+        return $balance;
+    }
+
+    /**
+     * Clear the cached credit balance.
+     *
+     * @return void
+     */
+    public function clearCreditBalanceCache(): void
+    {
+        $this->creditBalanceCache = null;
     }
 
     /**
@@ -192,6 +221,7 @@ class Customer extends Model
         // Get credits in FIFO order with pessimistic locking to prevent races
         $credits = $this->credits()
             ->whereNull('applied_at')
+            ->whereNull('expired_at')
             ->where(function ($query) {
                 $query->whereNull('expires_at')
                     ->orWhere('expires_at', '>', now());
@@ -248,6 +278,9 @@ class Customer extends Model
             $remaining = bcsub($remaining, $useAmount, 8);
         }
 
+        // Invalidate cached balance since credits were modified
+        $this->clearCreditBalanceCache();
+
         return [
             'covered' => $covered,
             'remaining' => $remaining,
@@ -263,23 +296,36 @@ class Customer extends Model
      */
     public function expireCredits(): int
     {
-        $count = $this->credits()
+        // Get IDs of credits that will expire (before updating)
+        $expiringIds = $this->credits()
             ->whereNull('applied_at')
+            ->whereNull('expired_at')
             ->whereNotNull('expires_at')
             ->where('expires_at', '<=', now())
-            ->update(['applied_at' => now()]);
+            ->pluck('id')
+            ->toArray();
+
+        if (empty($expiringIds)) {
+            return 0;
+        }
+
+        $count = $this->credits()
+            ->whereIn('id', $expiringIds)
+            ->update(['expired_at' => now()]);
 
         if ($count > 0) {
-            // Fetch expired credits for event dispatch (after they've been marked)
+            // Fetch expired credits for event dispatch using tracked IDs
             $expiredCredits = $this->credits()
-                ->where('applied_at', now())
-                ->whereNotNull('expires_at')
+                ->whereIn('id', $expiringIds)
                 ->get();
 
             $totalAmount = $expiredCredits->sum('amount');
 
             CreditExpired::dispatch($expiredCredits, $count, (string) $totalAmount);
         }
+
+        // Invalidate cached balance since credits were modified
+        $this->clearCreditBalanceCache();
 
         return $count;
     }

@@ -54,6 +54,8 @@ return new class extends Migration
             $table->json('metadata')->nullable();
             /** @var string Timestamp when the credit was applied */
             $table->timestamp('applied_at')->nullable();
+            /** @var string Timestamp when the credit was marked as expired */
+            $table->timestamp('expired_at')->nullable();
             /** @var string Timestamp when the credit expires */
             $table->timestamp('expires_at')->nullable();
             /** @var string Created and updated timestamps */

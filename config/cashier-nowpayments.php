@@ -240,4 +240,53 @@ return [
         */
         'sync_cooldown_seconds' => env('CASHIER_NOWPAYMENTS_SYNC_COOLDOWN', 15),
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Proration Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Control how plan swaps handle billing differences and credits.
+    |
+    */
+
+    'proration' => [
+        /*
+        |------------------------------------------------------------------
+        | Proration Mode
+        |------------------------------------------------------------------
+        |
+        | Controls how plan swaps handle billing differences:
+        |
+        | 'credit' - Issue prorated credit for unused time (default)
+        | 'immediate' - Charge/credit the difference immediately
+        | 'end_of_period' - No proration, charge full amount at renewal
+        | 'none' - No proration, no credits issued
+        |
+        */
+        'mode' => env('CASHIER_NOWPAYMENTS_PRORATION_MODE', 'credit'),
+
+        /*
+        |------------------------------------------------------------------
+        | Default Billing Interval
+        |------------------------------------------------------------------
+        |
+        | Fallback interval in days when the plan's interval_days is not
+        | available. Used for proration calculations when the plan
+        | relationship is not loaded.
+        |
+        */
+        'default_interval_days' => env('CASHIER_NOWPAYMENTS_PRORATION_INTERVAL', 30),
+
+        /*
+        |------------------------------------------------------------------
+        | Credit Expiration
+        |------------------------------------------------------------------
+        |
+        | Whether prorated credits should expire at the end of the current
+        | billing cycle. Set to false for credits that never expire.
+        |
+        */
+        'credits_expire' => env('CASHIER_NOWPAYMENTS_CREDITS_EXPIRE', true),
+    ],
 ];
