@@ -162,7 +162,7 @@ class WebhookController extends Controller
     protected function processWebhookData(array $data): void
     {
         // Handle payout webhook (detected by currency+address without payment_id)
-        if (isset($data['currency']) && isset($data['address']) && !isset($data['payment_id']) && !isset($data['subscription_id'])) {
+        if (isset($data['currency']) && isset($data['address'])  && isset($data['batch_withdrawal_id']) && !isset($data['payment_id']) && !isset($data['subscription_id'])) {
             $this->handlePayout($data);
 
             return;
@@ -174,7 +174,7 @@ class WebhookController extends Controller
         }
 
         // Handle subscription webhook
-        if (isset($data['subscription_id']) || isset($data['plan_id'])) {
+        if (isset($data['id']) && isset($data['status']) && !isset($data['batch_withdrawal_id']) && !isset($data['payment_id'])) {
             $this->handleSubscription($data);
         }
 
@@ -325,7 +325,7 @@ class WebhookController extends Controller
                     SubscriptionExpired::dispatch($subscription, $data);
                 }
 
-                if ($newStatus === 'paid' && $oldStatus !== $newStatus) {
+                if ($newStatus === 'paid') {
                     SubscriptionRenewed::dispatch($subscription, $data);
                 }
             }
