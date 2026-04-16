@@ -83,8 +83,8 @@ class WebhookController extends Controller
                 'event_type' => $this->detectEventType($data),
                 'payment_id' => $data['payment_id'] ?? null,
                 'invoice_id' => $data['invoice_id'] ?? null,
-                'subscription_id' => $data['subscription_id'] ?? null,
-                'payout_id' => $data['id'] ?? $data['batch_withdrawal_id'] ?? null,
+                'subscription_id' => $data['subscription_id'] ?? $data['id'] ?? null,
+                'payout_id' => $data['batch_withdrawal_id'] ?? $data['id'] ?? null,
                 'payment_status' => $data['payment_status'] ?? $data['status'] ?? null,
             ]);
 
@@ -161,31 +161,28 @@ class WebhookController extends Controller
      */
     protected function processWebhookData(array $data): void
     {
-        // Handle payout webhook (detected by currency+address without payment_id)
-        if (isset($data['currency']) && isset($data['address'])  && isset($data['batch_withdrawal_id']) && !isset($data['payment_id']) && !isset($data['subscription_id'])) {
+        // Handle payout webhook (detected by batch_withdrawal_id)
+        if (isset($data['batch_withdrawal_id'])) {
             $this->handlePayout($data);
-
             return;
         }
 
-        // Handle payment webhook (includes invoice payments when both payment_id and invoice_id are present)
+        // Handle payment webhook (includes invoice payments and direct payments)
         if (isset($data['payment_id'])) {
             $this->handlePayment($data);
+            return;
         }
 
-        // Handle subscription webhook
-        if (isset($data['id']) && isset($data['status']) && !isset($data['batch_withdrawal_id']) && !isset($data['payment_id'])) {
+        // Handle subscription or recurring payment webhook
+        if (isset($data['subscription_id']) || (isset($data['id']) && isset($data['status']) && !isset($data['batch_withdrawal_id']) && !isset($data['payment_id']))) {
             $this->handleSubscription($data);
+            return;
         }
 
-        // Handle invoice webhook (invoice status changes without a payment_id)
-        if (isset($data['invoice_id']) && !isset($data['payment_id'])) {
+        // Handle invoice webhook (status changes without a specific payment_id)
+        if (isset($data['invoice_id'])) {
             $this->handleInvoice($data);
-        }
-
-        // Handle re-deposit
-        if (isset($data['parent_payment_id'])) {
-            $this->handleReDeposit($data);
+            return;
         }
     }
 
@@ -226,14 +223,22 @@ class WebhookController extends Controller
                 $billable = $customer->billable;
             }
 
+            // Resolve parent payment if it's a re-deposit or partial payment
+            $parentPaymentId = null;
+            if (isset($data['parent_payment_id'])) {
+                /** @var Payment|null $parent */
+                $parent = $paymentModel::where('nowpayments_payment_id', (string) $data['parent_payment_id'])->first();
+                $parentPaymentId = $parent?->id;
+            }
+
             $payment = new $paymentModel();
             $dataArray = [
                 'customer_id' => $customer->id,
                 'nowpayments_payment_id' => (string) $data['payment_id'],
                 'nowpayments_purchase_id' => $data['purchase_id'] ?? null,
-                'parent_payment_id' => $data['parent_payment_id'] ?? null,
+                'parent_payment_id' => $parentPaymentId,
                 'type' => isset($data['invoice_id']) ? 'invoice' : 'onetime',
-                'status' => $data['payment_status'],
+                'status' => $data['payment_status'] ?? 'waiting',
                 'currency' => $data['price_currency'] ?? null,
                 'amount' => $data['price_amount'] ?? 0,
                 'amount_paid' => $data['actually_paid'] ?? 0,
@@ -245,6 +250,12 @@ class WebhookController extends Controller
                 'payin_hash' => $data['payin_hash'] ?? null,
                 'payout_hash' => $data['payout_hash'] ?? null,
                 'fee' => $data['fee'] ?? null,
+                'metadata' => [
+                    'ipn_id' => $data['id'] ?? null,
+                    'actually_paid_at_fiat' => $data['actually_paid_at_fiat'] ?? null,
+                    'outcome_amount' => $data['outcome_amount'] ?? null,
+                    'outcome_currency' => $data['outcome_currency'] ?? null,
+                ],
             ];
 
             if ($billable !== null) {
@@ -302,12 +313,19 @@ class WebhookController extends Controller
     {
         $subscriptionModel = config('cashier-nowpayments.model.subscription', Subscription::class);
 
+        // Subscriptions use 'subscription_id' or 'id' in IPN
+        $remoteId = $data['subscription_id'] ?? $data['id'] ?? null;
+
         /** @var Subscription|null $subscription */
-        $subscription = $subscriptionModel::where('nowpayments_subscription_id', $data['subscription_id'] ?? $data['id'] ?? null)->first();
+        $subscription = $subscriptionModel::where('nowpayments_subscription_id', (string) $remoteId)->first();
 
         if ($subscription !== null) {
             $oldStatus = $subscription->status;
-            $newStatus = $data['status'] ?? $subscription->status;
+            $newStatus = strtolower((string) ($data['status'] ?? $subscription->status));
+
+            if ($newStatus === 'finished') {
+                $newStatus = 'paid';
+            }
 
             $subscription->update([
                 'status' => $newStatus,
@@ -389,7 +407,7 @@ class WebhookController extends Controller
                 'status' => strtolower($data['status'] ?? $payout->status),
                 'hash' => $data['hash'] ?? $payout->hash,
                 'error' => $data['error'] ?? $payout->error,
-                'processed_at' => $data['status'] === 'finished' && $payout->processed_at === null
+                'processed_at' => strtolower($data['status'] ?? '') === 'finished' && $payout->processed_at === null
                     ? now()
                     : $payout->processed_at,
             ]);
@@ -548,7 +566,13 @@ class WebhookController extends Controller
             return 'payment';
         }
 
-        if (isset($data['subscription_id']) || isset($data['plan_id'])) {
+        if (isset($data['batch_withdrawal_id'])) {
+            return 'payout';
+        }
+
+        // Subscriptions/Recurring payments use 'id' or 'subscription_id'
+        // and do NOT have 'payment_id' or 'batch_withdrawal_id'
+        if (isset($data['subscription_id']) || (isset($data['id']) && !isset($data['payment_id']) && !isset($data['batch_withdrawal_id']))) {
             return 'subscription';
         }
 
@@ -556,14 +580,59 @@ class WebhookController extends Controller
             return 'invoice';
         }
 
-        if (isset($data['currency']) && isset($data['address']) && !isset($data['payment_id'])) {
-            return 'payout';
-        }
-
         if (isset($data['parent_payment_id'])) {
             return 'redeposit';
         }
 
         return null;
+    }
+
+    /**
+     * Record a recurring payment for a subscription.
+     */
+    protected function recordRecurringPayment(Subscription $subscription, array $data): void
+    {
+        $paymentModel = config('cashier-nowpayments.model.payment', Payment::class);
+
+        // For recurring payments, we use the event ID + timestamp to create a unique reference
+        // if a specific payment_id isn't provided.
+        $externalId = $data['id'] ?? $data['subscription_id'] ?? $subscription->nowpayments_subscription_id;
+        $timestamp = strtotime($data['created_at'] ?? 'now');
+        $paymentRef = "recurring_{$externalId}_{$timestamp}";
+
+        /** @var Payment|null $payment */
+        $payment = $paymentModel::where('nowpayments_payment_id', $paymentRef)->first();
+
+        if ($payment === null) {
+            $payment = new $paymentModel();
+            
+            // Resolve billable association from subscription
+            $customer = $subscription->customer;
+            
+            $payment->fill([
+                'customer_id' => $subscription->customer_id,
+                'billable_id' => $customer?->billable_id,
+                'billable_type' => $customer?->billable_type,
+                'subscription_id' => $subscription->id,
+                'nowpayments_payment_id' => $paymentRef,
+                'type' => 'recurring',
+                'status' => 'finished',
+                'currency' => $data['currency'] ?? $subscription->currency,
+                'amount' => $data['amount'] ?? $subscription->total_price,
+                'amount_paid' => $data['amount'] ?? $subscription->total_price,
+                'pay_currency' => $data['currency'] ?? null,
+                'pay_amount' => $data['amount'] ?? null,
+                'paid_at' => Carbon::parse($data['created_at'] ?? now()),
+                'metadata' => [
+                    'source' => 'recurring_webhook',
+                    'original_id' => $data['id'] ?? null,
+                    'created_at' => $data['created_at'] ?? null,
+                    'updated_at' => $data['updated_at'] ?? null,
+                ],
+            ]);
+            $payment->save();
+
+            PaymentReceived::dispatch($payment, $data);
+        }
     }
 }

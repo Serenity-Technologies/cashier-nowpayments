@@ -248,4 +248,19 @@ class Payment extends Model
     {
         return config('cashier-nowpayments.model.subscription', Subscription::class);
     }
+
+    /**
+     * Get the parent payment model class.
+     *
+     * @return class-string<Payment>
+     */
+    protected function getParentPaymentModel(): string
+    {
+        return config('cashier-nowpayments.model.payment', Payment::class);
+    }
+
+    public function parentPayment(): ?BelongsTo
+    {
+        return $this->belongsTo($this->getParentPaymentModel(), 'parent_payment_id');
+    }
 }
