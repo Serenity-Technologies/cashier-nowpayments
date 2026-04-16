@@ -1,0 +1,56 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+/**
+ * Add expired_at column to the credits table.
+ *
+ * This migration distinguishes credits that have been consumed (applied_at)
+ * from credits that have expired (expired_at). Previously, expired credits
+ * were marked by setting applied_at, which corrupted the audit trail.
+ */
+return new class extends Migration
+{
+    /**
+     * Run the migrations.
+     *
+     * @return void
+     */
+    public function up(): void
+    {
+        $prefix = config('cashier-nowpayments.prefix', 'cashier_nowpayments_');
+
+        Schema::table($prefix . 'credits', function (Blueprint $table) {
+            $table->timestamp('expired_at')->nullable()->after('applied_at');
+        });
+
+        // Migrate credits that were incorrectly marked as "applied" when they actually expired
+        // These are credits with applied_at set but also have expires_at in the past
+        // and where the applied_at date matches the expires_at date (indicating auto-expiration)
+        DB::table($prefix . 'credits')
+            ->whereNull('expired_at')
+            ->whereNotNull('applied_at')
+            ->whereNotNull('expires_at')
+            ->whereColumn('applied_at', '>=', 'expires_at')
+            ->update([
+                'expired_at' => DB::raw('applied_at'),
+                'applied_at' => null,
+            ]);
+    }
+
+    /**
+     * Reverse the migrations.
+     *
+     * @return void
+     */
+    public function down(): void
+    {
+        $prefix = config('cashier-nowpayments.prefix', 'cashier_nowpayments_');
+
+        Schema::table($prefix . 'credits', function (Blueprint $table) {
+            $table->dropColumn('expired_at');
+        });
+    }
+};
