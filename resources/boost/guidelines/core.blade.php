@@ -149,9 +149,15 @@ Swap plans with automatic proration:
 
 @verbatim
 <code-snippet name="Swap Subscription Plan" lang="php">
+use SerenityTechnologies\CashierNowPayments\Support\ProrationMode;
+
 $subscription->swap($newPlanId);
+
+// With explicit mode (credit, immediate, end_of_period, none)
+$subscription->swap($newPlanId, ProrationMode::IMMEDIATE);
 // Automatically: calculates prorated credit, deletes old sub on API,
-// creates new sub, updates local record, records credit ledger entry
+// creates new sub, updates local record, records credit ledger entry,
+// and handles upgrade charges if needed.
 </code-snippet>
 @endverbatim
 
@@ -237,6 +243,9 @@ All config is in `config/cashier-nowpayments.php`. Key settings:
 | `payment_status.cache_seconds` | `10` | Remote status polling cache TTL |
 | `checkout.payment_timeout_seconds` | `900` | Checkout countdown timer |
 | `checkout.sync_cooldown_seconds` | `15` | Minimum seconds between API sync calls |
+| `proration.mode` | `credit` | Default proration mode |
+| `proration.default_interval_days` | `30` | Fallback billing interval |
+| `proration.credits_expire` | `true` | Whether prorated credits expire |
 
 ### Important Rules for AI
 

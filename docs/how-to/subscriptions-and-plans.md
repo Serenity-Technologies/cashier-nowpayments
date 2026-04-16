@@ -259,21 +259,34 @@ $newSubscription = $user->newSubscription('default', $planId)->create();
 
 ### Swapping Plans
 
-The `swap()` method performs a full plan change flow inside a database transaction:
+The `swap()` method performs a full plan change flow inside a database transaction. It now supports multiple proration modes:
 
 ```php
+use SerenityTechnologies\CashierNowPayments\Support\ProrationMode;
+
+// Use default mode from config (CREDIT)
 $subscription->swap($newPlanId);
+
+// Immediate charging/crediting
+$subscription->swap($newPlanId, ProrationMode::IMMEDIATE);
+
+// No proration, new price at next renewal
+$subscription->swap($newPlanId, ProrationMode::END_OF_PERIOD);
+
+// No proration, no credits
+$subscription->swap($newPlanId, ProrationMode::NONE);
 ```
 
 Steps performed atomically:
 
-1. **Calculates prorated credit** from the remaining billing period of the old plan.
+1. **Calculates prorated credit** from the remaining billing period of the old plan (only for `CREDIT` and `IMMEDIATE` modes).
 2. **Deletes the old subscription** on NOWPayments.
 3. **Creates a new subscription** on NOWPayments with the new plan.
 4. **Updates the local record** with the new plan ID, subscription ID, price, and currency.
 5. **Updates subscription items** to reference the new plan.
-6. **Records a credit ledger entry** with the prorated amount (if `customer_id` exists and credit > 0).
-7. **Dispatches `SubscriptionUpdated`** with metadata including old/new plan IDs, prices, and prorated credit.
+6. **Records a credit ledger entry** with the prorated amount (for `CREDIT` mode).
+7. **Handles upgrade charges** (for `IMMEDIATE` mode) — see [Immediate Proration](#immediate-proration) below.
+8. **Dispatches events**: Both `SubscriptionUpdated` and the new `SubscriptionSwapped` events are dispatched.
 
 See [Proration Logic](#4-proration-logic) for details on the credit calculation.
 
@@ -321,7 +334,7 @@ The `calculateProratedCredit()` method:
 4. Computes:
    - `total_days = period_start.diffInDays(renews_at)`
    - `remaining_days = now.diffInDays(renews_at)`
-5. Applies the formula and rounds to 2 decimal places.
+5. Applies the formula and rounds to 8 decimal places.
 
 ### Credit Ledger Entry
 
@@ -358,6 +371,26 @@ $difference = old_price - new_price;
 ### Precision
 
 All monetary calculations use `bcmath` functions (`bcadd`, `bcsub`, `bccomp`) with 8-decimal precision to avoid floating-point errors.
+
+### Immediate Proration
+
+When using `ProrationMode::IMMEDIATE`, the package attempts to settle the price difference right away:
+
+- **Downgrades:** Calculates prorated credit and issues it to the customer's balance.
+- **Upgrades:** Calculates the price difference, applies any existing customer credits, and if a balance remains, creates a **checkout session** for the difference.
+
+```php
+// After swap with IMMEDIATE mode
+$subscription->swap('premium-plan', ProrationMode::IMMEDIATE);
+
+// The SubscriptionSwapped event will contain the upgrade_checkout_url
+Event::listen(SubscriptionSwapped::class, function ($event) {
+    if ($url = $event->payload['upgrade_checkout_url']) {
+        // Redirect user to pay the upgrade difference
+        return redirect($url);
+    }
+});
+```
 
 ---
 

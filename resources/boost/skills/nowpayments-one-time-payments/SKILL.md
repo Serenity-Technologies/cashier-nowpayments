@@ -341,10 +341,10 @@ $session = Checkout::createSession(49.99, 'usd', [
 | `nowpayments_payment_id` | string | NOWPayments payment ID |
 | `nowpayments_purchase_id` | string | NOWPayments purchase ID |
 | `status` | string | Payment status (finished, failed, expired, etc.) |
-| `amount` | decimal | Fiat amount |
-| `amount_paid` | decimal | Amount actually paid |
+| `amount` | decimal(20,8) | Fiat amount |
+| `amount_paid` | decimal(20,8) | Amount actually paid |
 | `pay_currency` | string | Cryptocurrency |
-| `pay_amount` | decimal | Crypto amount |
+| `pay_amount` | decimal(20,8) | Crypto amount |
 | `pay_address` | string | Deposit address |
 | `paid_at` | datetime | When payment completed |
 | `refunded_at` | datetime | When payment refunded |

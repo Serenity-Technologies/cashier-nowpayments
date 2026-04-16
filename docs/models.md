@@ -43,12 +43,15 @@ protected $casts = [
 
 ### Methods
 
-#### `creditBalance(): string`
+#### `creditBalance(bool $forceRefresh = false): string`
 
-Returns the sum of all unapplied, non-expired credits.
+Returns the sum of all unapplied, non-expired credits. Results are cached on the model instance to improve performance during complex calculations.
 
 ```php
-$balance = $customer->creditBalance(); // "15.50"
+$balance = $customer->creditBalance(); // "15.50000000"
+
+// Force a fresh database query
+$balance = $customer->creditBalance(true);
 ```
 
 #### `getOriginalAmountForCredit(Model $credit): string`
@@ -72,9 +75,17 @@ $result = $customer->applyCredits(50.00);
 // $covered is what credits paid, $remaining is what still needs to be charged
 ```
 
+#### `clearCreditBalanceCache(): void`
+
+Manually clears the internal credit balance cache.
+
+```php
+$customer->clearCreditBalanceCache();
+```
+
 #### `expireCredits(): int`
 
-Marks all unapplied credits past their `expires_at` as applied. Dispatches a `CreditExpired` event with the expired credits, count, and total amount.
+Marks all unapplied credits past their `expires_at` as expired by setting their `expired_at` timestamp. Dispatches a `CreditExpired` event with the expired credits, count, and total amount. Unlike consumption, expiration does not set the `applied_at` column.
 
 ```php
 $count = $customer->expireCredits(); // number of credits expired
@@ -301,7 +312,7 @@ protected $casts = [
     'ends_at' => 'datetime',
     'renews_at' => 'datetime',
     'cancels_at' => 'datetime',
-    'total_price' => 'decimal:2',
+    'total_price' => 'decimal:8',
 ];
 ```
 
@@ -313,6 +324,7 @@ protected $casts = [
 | `items()` | `HasMany` | `SubscriptionItem` records |
 | `payments()` | `HasMany` | `Payment` records |
 | `credits()` | `HasMany` | `Credit` records |
+| `plan()` | `BelongsTo` | `Plan` record (synced via `nowpayments_plan_id`) |
 
 ### Scopes
 
@@ -364,17 +376,22 @@ try {
 }
 ```
 
-#### `swap(string $newPlanId): self`
+#### `swap(string $newPlanId, ?string $prorationMode = null): self`
 
-Swaps the subscription to a new plan with **prorated credit** for the unused portion of the current billing period. The entire operation runs in a **database transaction** to prevent partial failures.
+Swaps the subscription to a new plan using the specified proration mode. The entire operation runs in a **database transaction** to prevent partial failures.
+
+**Proration Modes:**
+- `CREDIT` (default) — Calculates prorated credit for the unused portion and issues a credit ledger entry.
+- `IMMEDIATE` — Immediately charges or credits the difference. For upgrades, a checkout session is created for the remaining amount if credits don't cover it.
+- `END_OF_PERIOD` — No proration; the new price is charged at the next renewal.
+- `NONE` — No proration and no credits issued.
 
 **Proration formula:**
 
 ```
 proratedAmount = (remainingDays / totalBillingDays) * totalPrice
 ```
-
-Where `remainingDays` is the days from now until `renews_at`, and `totalBillingDays` is derived from `interval_days` (defaulting to 30).
+Where `remainingDays` is the days from now until `renews_at`, and `totalBillingDays` is derived from `interval_days` (defaulting to 30 from config).
 
 The swap performs these steps atomically:
 
@@ -383,8 +400,8 @@ The swap performs these steps atomically:
 3. Creates a new subscription with the requested plan.
 4. Updates the local record (`nowpayments_plan_id`, `nowpayments_subscription_id`, `total_price`, `renews_at`).
 5. Updates all `SubscriptionItem` records with the new plan ID.
-6. Records a `Credit` entry (type `swap`) that expires at the end of the current billing cycle.
-7. Dispatches `SubscriptionUpdated` with old/new plan IDs, prices, and the prorated credit amount.
+6. Records a `Credit` entry (if mode is `CREDIT`).
+7. Dispatches `SubscriptionSwapped` (and `SubscriptionUpdated`) with details of the swap.
 
 ```php
 $subscription->swap('new_plan_id');
@@ -594,14 +611,15 @@ Credit ledger entries track every credit event: plan swaps, refunds, and manual 
 | `reference_id` | ULID | Polymorphic reference |
 | `reference_type` | string | Polymorphic type |
 | `type` | string | `swap`, `refund`, or `adjustment` |
-| `amount` | decimal(8) | Current remaining credit amount |
-| `balance_before` | decimal(8) | Customer balance before this credit |
-| `balance_after` | decimal(8) | Customer balance after this credit |
+| `amount` | decimal(20,8) | Current remaining credit amount |
+| `balance_before` | decimal(20,8) | Customer balance before this credit |
+| `balance_after` | decimal(20,8) | Customer balance after this credit |
 | `currency` | string | Currency code |
 | `old_plan_id` | string | For swap credits: old plan |
 | `new_plan_id` | string | For swap credits: new plan |
 | `description` | string | Human-readable description |
 | `applied_at` | datetime | When the credit was consumed (nullable) |
+| `expired_at` | datetime | When the credit expired (nullable) |
 | `expires_at` | datetime | Expiration date (nullable) |
 | `metadata` | JSON | Arbitrary metadata |
 
@@ -614,6 +632,7 @@ protected $casts = [
     'balance_after' => 'decimal:8',
     'metadata' => 'array',
     'applied_at' => 'datetime',
+    'expired_at' => 'datetime',
 ];
 ```
 

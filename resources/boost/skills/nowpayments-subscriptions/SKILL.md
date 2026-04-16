@@ -113,7 +113,12 @@ $subscription = $user->newSubscription('default', $planId)->create();
 ### Swap Plans
 
 ```php
+use SerenityTechnologies\CashierNowPayments\Support\ProrationMode;
+
 $subscription->swap($newPlanId);
+
+// With explicit proration mode
+$subscription->swap($newPlanId, ProrationMode::IMMEDIATE);
 ```
 
 The swap operation is wrapped in a DB transaction and performs:
@@ -121,8 +126,9 @@ The swap operation is wrapped in a DB transaction and performs:
 2. Deletes old subscription on NOWPayments
 3. Creates new subscription on NOWPayments
 4. Updates local record (plan ID, subscription ID, price, currency)
-5. Records credit ledger entry with `balance_before`, `balance_after`, swap type
-6. Dispatches `SubscriptionUpdated` event
+5. Records credit ledger entry (for `CREDIT` mode)
+6. Handles upgrade charge (for `IMMEDIATE` mode, returns `upgrade_checkout_url`)
+7. Dispatches `SubscriptionSwapped` and `SubscriptionUpdated` events
 
 ### Quantity Management
 

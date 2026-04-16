@@ -42,10 +42,11 @@ Every credit entry tracks the following fields:
 | `currency` | The currency of the credit (e.g., `usd`). |
 | `balance_before` | The customer's total credit balance before this credit was issued (for audit trail). |
 | `balance_after` | The customer's total credit balance after this credit was issued. |
-| `applied_at` | Nullable timestamp. Set when the credit is **fully consumed**. Unapplied credits have `null`. |
-| `expires_at` | Nullable timestamp. The deadline by which the credit must be used. Swap credits expire at `renews_at` (end of the current billing cycle). |
+| `applied_at` | Nullable timestamp. Set when the credit is **fully consumed**. |
+| `expired_at` | Nullable timestamp. Set when the credit is **expired**. |
+| `expires_at` | Nullable timestamp. The deadline by which the credit must be used. |
 
-When a credit is created, `applied_at` is `null`. When it is fully consumed, `applied_at` is set to the current timestamp. Partially consumed credits retain a reduced `amount` and record each consumption event in their `metadata`.
+When a credit is created, `applied_at` and `expired_at` are `null`. When it is fully consumed, `applied_at` is set. When it passes its expiration date, `expired_at` is set. Partially consumed credits retain a reduced `amount` and record each consumption event in their `metadata`.
 
 ---
 
@@ -149,18 +150,24 @@ $credit->isAdjustment(); // true if type === 'adjustment'
 
 ## 3. Checking Credit Balance
 
-Use the `creditBalance()` method on the `Customer` model to get the sum of all unapplied, non-expired credits:
+Use the `creditBalance()` method on the `Customer` model to get the sum of all unapplied, non-expired credits. Results are cached on the model instance to improve performance.
 
 ```php
-$customer = $user->customer; // or however you resolve the Customer
+$customer = $user->customer;
 
 $balance = $customer->creditBalance(); // returns string, e.g., "15.50000000"
+
+// Force a fresh database query
+$balance = $customer->creditBalance(forceRefresh: true);
+
+// Manually clear the cache
+$customer->clearCreditBalanceCache();
 ```
 
 ### Important Notes
 
-- Returns a **string** formatted to 8 decimal places (bcmath precision). Never a float.
-- Only counts credits where `applied_at IS NULL` and (`expires_at IS NULL` or `expires_at > now()`).
+- Returns a **string** formatted to 8 decimal places (bcmath precision).
+- Only counts credits where `applied_at IS NULL`, `expired_at IS NULL`, and (`expires_at IS NULL` or `expires_at > now()`).
 - Returns `"0"` if no credits are available.
 
 ### Example: Display Available Balance
@@ -470,7 +477,7 @@ if (bccomp($balance, '0', 8) > 0) {
 
 ## 7. Credit Expiration
 
-Credits with an `expires_at` timestamp are automatically expired when that time passes. The `expireCredits()` method marks all expired, unapplied credits as applied.
+Credits with an `expires_at` timestamp are automatically expired when that time passes. The `expireCredits()` method marks all expired, unapplied credits by setting their `expired_at` timestamp.
 
 ### Basic Usage
 
@@ -482,11 +489,9 @@ $expiredCount = $customer->expireCredits();
 
 ### What Happens
 
-1. All credits where `applied_at IS NULL` and `expires_at <= now()` are updated to set `applied_at = now()`.
-2. If any credits were expired, a `CreditExpired` event is dispatched containing:
-   - `$credits` — Collection of expired Credit models
-   - `$count` — number of credits expired
-   - `$totalAmount` — sum of the expired credit amounts (string)
+1. All credits where `applied_at IS NULL`, `expired_at IS NULL`, and `expires_at <= now()` are updated to set `expired_at = now()`.
+2. If any credits were expired, a `CreditExpired` event is dispatched.
+3. The internal credit balance cache is cleared.
 
 ### The CreditExpired Event
 

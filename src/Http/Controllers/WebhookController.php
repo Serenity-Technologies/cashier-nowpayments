@@ -345,6 +345,10 @@ class WebhookController extends Controller
 
                 if ($newStatus === 'paid') {
                     SubscriptionRenewed::dispatch($subscription, $data);
+
+                    // if($data['amount']) {
+                    //     $this->recordRecurringPayment($subscription, $data);
+                    // }
                 }
             }
         }
