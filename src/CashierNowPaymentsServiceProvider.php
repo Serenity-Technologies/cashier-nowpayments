@@ -45,9 +45,9 @@ class CashierNowPaymentsServiceProvider extends ServiceProvider
             __DIR__ . '/../public/coins' => public_path('vendor/cashier-nowpayments/coins'),
         ], 'cashier-nowpayments-coin-images');
 
-        $this->publishes([
-            __DIR__ . '/../database/migrations/stubs' => database_path('migrations'),
-        ], 'cashier-nowpayments-migrations');
+        // $this->publishes([
+        //     __DIR__ . '/../database/migrations/stubs' => database_path('migrations'),
+        // ], 'cashier-nowpayments-migrations');
 
         if ($this->app->runningInConsole()) {
             $this->commands([
