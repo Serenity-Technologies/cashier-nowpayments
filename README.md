@@ -394,4 +394,4 @@ The MIT License (MIT). See [LICENSE](LICENSE) for details.
 
 **Kwadwo Kyeremeh** — [kyerematics@gmail.com](mailto:kyerematics@gmail.com)
 
-Built on top of [serenity_technologies/nowpayments](https://github.com/serenity-technologies/nowpayments) — the NOWPayments PHP SDK.
+Built on top of [serenity_technologies/nowpayments](https://github.com/serenity-technologies/nowpayments-php) — the NOWPayments PHP SDK.
