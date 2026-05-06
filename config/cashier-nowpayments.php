@@ -1,5 +1,11 @@
 <?php
 
+/**
+ * @author Kwadwo Kyeremeh <kyerematics@gmail.com>
+ * @copyright 2026 Serenity Technologies
+ * @license MIT License
+ */
+
 return [
     /*
     |--------------------------------------------------------------------------

@@ -1,6 +1,13 @@
 <!DOCTYPE html>
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
 <head>
+    {{--
+     * @author Kwadwo Kyeremeh <kyerematics@gmail.com>
+     * @copyright 2026 Serenity Technologies
+     * @license MIT License
+     * @package serenity_technologies/cashier-nowpayments
+     * @version 1.2.9
+     --}}
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
